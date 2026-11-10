@@ -1,0 +1,15 @@
+{
+  "name": "@curseengine/engine",
+  "version": "0.1.0",
+  "description": "CurseEngine skeleton: tokenizer, parser, (later) executor, simulator, audit log. Zero UI.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "docs:grammar": "echo 'grammar docs generator lands with the rule-graph inspector (T1.5); hook is wired.'"
+  }
+}

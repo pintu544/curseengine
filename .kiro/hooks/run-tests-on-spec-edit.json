@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Run curse test-suite on spec edit",
+      "trigger": "PostFileSave",
+      "description": "Run engine tests whenever a spec file is edited",
+      "matcher": "\\.kiro/specs/.*\\.md$",
+      "action": {
+        "type": "command",
+        "command": "pnpm test"
+      }
+    }
+  ]
+}

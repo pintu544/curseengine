@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Regenerate rule-graph docs on grammar change",
+      "trigger": "PostFileSave",
+      "description": "Regenerate grammar docs when parser/AST/tokenizer change",
+      "matcher": "curse-engine/src/(parser|ast|tokenizer)\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "pnpm --filter @curseengine/engine run docs:grammar"
+      }
+    }
+  ]
+}

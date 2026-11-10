@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "name": "Regenerate rule-graph docs on grammar change",
+  "description": "When the parser/AST/tokenizer changes, regenerate the grammar / rule-graph documentation.",
+  "version": "1",
+  "when": { "type": "fileEdited", "patterns": ["packages/curse-engine/src/parser.ts", "packages/curse-engine/src/ast.ts", "packages/curse-engine/src/tokenizer.ts"] },
+  "then": { "type": "runCommand", "command": "pnpm --filter @curseengine/engine run docs:grammar" }
+}

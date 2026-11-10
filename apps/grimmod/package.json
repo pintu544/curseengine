@@ -1,0 +1,8 @@
+{
+  "name": "@curseengine/grimmod",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Placeholder - Next.js + Tailwind app arrives in a later slice.",
+  "dependencies": { "@curseengine/engine": "workspace:*" }
+}

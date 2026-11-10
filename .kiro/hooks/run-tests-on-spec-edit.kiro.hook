@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "name": "Run curse test-suite on spec edit",
+  "description": "When a spec file is saved, run the engine test suite so spec and implementation never drift.",
+  "version": "1",
+  "when": { "type": "fileEdited", "patterns": [".kiro/specs/**/*.md"] },
+  "then": { "type": "runCommand", "command": "pnpm test" }
+}
