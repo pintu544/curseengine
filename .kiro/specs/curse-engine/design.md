@@ -32,7 +32,7 @@ The grammar text and its own examples differ in three places; the examples are a
 1. `count(` event [`by same` field] [`flagged`] `)` — the GrimMod example's `by same author flagged` modifiers inside `count(...)`.
 2. `every` interval may be followed by an optional `where` conditions clause (Deadbeat example).
 3. `duration` := positive number + unit in {minute(s), hour(s), day(s), week(s)}; grammar left units unspecified.
-Also: `and`/`or` chains are stored flat in source order — precedence is not defined by the grammar and is left to the executor task (T1.4). Names/fields/targets are words (`[A-Za-z_][A-Za-z0-9_.-]*`); grammar keywords are reserved.
+Also: `and`/`or` chains are stored flat in source order — precedence is not defined by the grammar and is left to the executor task (T1.4). **Resolved (approved by Pintu, 11 Nov):** the executor evaluates `and`/`or` chains FLAT, left to right in source order, with no operator precedence (`a or b and c` = `(a or b) and c`). Names/fields/targets are words (`[A-Za-z_][A-Za-z0-9_.-]*`); grammar keywords are reserved.
 
 ## Data model
 `curses`(id, app, name, source_text, ast jsonb, enabled, created_at) · `events`(id, app, type, actor, payload, occurred_at) · `audit_entries`(id, curse_id, event_id, decision_path, action, target, status applied|simulated|reversed, reversal_of, created_at) · Deadbeat: `invoices`, `outbox`.
