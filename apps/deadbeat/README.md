@@ -1,3 +1,57 @@
 # Deadbeat
 
-Invoice-chasing demo on the unmodified CurseEngine. **Placeholder** — built in Slice 3 (T3.1).
+Invoice-chasing demo on the unmodified CurseEngine. Next.js (App Router) and Tailwind, structured like GrimMod. Advancing a fixture clock emits one `tick` event per invoice through the same executor; the mail adapter delivers to an in-app **outbox**. Nothing is ever sent to a real address.
+
+## Run
+```
+pnpm install
+pnpm --filter @curseengine/deadbeat build
+pnpm --filter @curseengine/deadbeat start    # http://localhost:3001
+pnpm --filter @curseengine/deadbeat dev      # development server
+pnpm --filter @curseengine/deadbeat test
+pnpm --filter @curseengine/deadbeat sim:fixtures
+```
+Scripts use webpack (`--webpack`) for the same reason as GrimMod: the engine is consumed from TypeScript source.
+
+## Try the storyline
+1. Press **Load fixtures** to install the three tier curses (or install one from the editor).
+2. Press **Advance clock +1 day**. Invoices that are at least 7 days overdue get the polite nudge in the outbox; the 3-day invoice gets nothing.
+3. Keep advancing. At 14 days the firm reminder is sent, at 21 days an escalation appears in the owner inbox. Each tier is sent once per invoice.
+4. In the grimoire, **Undo** an email: its outbox message is marked retracted, the entry stays, and a reversal entry is appended.
+
+## Tier curses
+| Curse | Rule |
+|---|---|
+| `late-payers` | `every 1 day where days_overdue >= 7 -> email polite-nudge to client` |
+| `late-payers-firm` | `every 1 day where days_overdue >= 14 -> email firm-reminder to client` |
+| `late-payers-escalate` | `every 1 day where days_overdue >= 21 -> escalate to owner` |
+
+Tick fields: `invoice_id`, `days_overdue`, `client` (the email address), `client_name`, `amount`.
+
+## API
+| Route | What |
+|---|---|
+| `POST /api/curses` | `{source}` -> 201 `{id, graph}` or 422 `{line, message}` |
+| `GET /api/curses/:id/graph` | Rule graph, or 404 |
+| `POST /api/curses/:id/simulate` | Recording-stub run over one tick per fixture invoice; touches no live state |
+| `GET /api/events` | Invoices, clock, outbox, escalations, latest decision |
+| `POST /api/events` | Clock tick: `{days?}` whole days, default 1, 0 to 90; 400 on bad input |
+| `GET /api/grimoire` | Audit entries with `reversed` and `reversible` flags |
+| `POST /api/grimoire/:id/undo` | 200 with the reversal entry, 404 unknown, 409 already reversed |
+| `POST /api/fixtures` | Full demo reset, then installs the tier curses (`reset: true`) |
+| `POST /api/reset` | Full demo reset: fixtures restored, curses removed, outbox and grimoire discarded (`reset: true` and a note say so) |
+| `GET /api/health` | `{ok: true, app: "deadbeat", engineEnabled}` |
+
+## FR9 kill switch
+One flag at the host boundary silences this app: set `CURSE_ENGINE_ENABLED=off` (also `0` or `false`, any case) before starting the server. It defaults to on. It is read on every call, and `host.setEngineEnabled(false)` overrides it in code (used by the tests).
+
+While it is off, `POST /api/events` returns **503** (`host.advanceClock` throws `EngineDisabledError`) with `{disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message}` and nothing else happens: the clock does not move, no tick is emitted, no email reaches the outbox, no escalation is raised and no grimoire entry is written. `GET /api/health` reports `engineEnabled`. Reading state and undoing earlier grimoire entries stay available, because undo only reverses what the engine already did. Turn the flag back on and normal behaviour resumes. Proof: `test/killswitch.test.ts`.
+
+## Behaviour notes and limits
+- The executor dedupes nothing. The host tracks which curse has acted on which invoice and hands the executor only curses not yet sent for that invoice, so repeated ticks create no duplicate emails, no taken actions and no grimoire entries.
+- **Undo does not re-arm a tier.** After an email is retracted it is not re-sent for that invoice. This keeps "at most once" simple and honest.
+- The clock only moves forward. At the reference clock the older invoices are already past several thresholds, so the first tick sends tiers 1, 2 and 3 to the invoices that qualify (a catch-up); later ticks add nothing for them.
+- Fixture data is in `src/lib/fixtures.ts` (stable ids, reference clock 2026-11-11T12:00:00Z; invoices 3, 8, 15, 22 and 40 days overdue).
+- Simulation uses one tick per invoice at the reference clock, so it is a "what would run now" snapshot, not a multi-day replay.
+- Single process, in-memory state on `globalThis`. No authentication: local demo only, do not expose it.
+- `DeadbeatHost.intake` is the single point where events reach the executor; the FR9 kill switch is enforced there and at the start of `advanceClock`.

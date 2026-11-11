@@ -1,0 +1,29 @@
+{
+  "project_type": "pnpm monorepo, TypeScript; packages/curse-engine (zero-UI engine), apps/grimmod (Next.js 16 + Tailwind 4 reference app), apps/deadbeat (placeholder package.json + README only)",
+  "language": "TypeScript (ESM, Node >=20)",
+  "build_system": "pnpm workspaces (pnpm-workspace.yaml: packages/*, apps/*). New workspace dirs under packs/ are NOT in the workspace unless pnpm-workspace.yaml is edited; pnpm-lock.yaml must stay in sync so `pnpm install --frozen-lockfile` passes.",
+  "test_framework": "vitest 2.1.9 (apps/grimmod/vitest.config.ts: include test/**/*.test.ts, alias @ -> src)",
+  "build_command": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm --filter @curseengine/deadbeat build",
+  "test_command": "pnpm test",
+  "verification_instructions": "From a clean state (rm -rf node_modules apps/*/node_modules packages/*/node_modules) run: pnpm install --frozen-lockfile; pnpm test; pnpm typecheck. Baseline: engine 74 + grimmod 44 = 118 tests green. Finally `git diff --stat e07fdb1 -- packages/curse-engine` must be empty.",
+  "snapshot_or_generated_files": "docs/grammar.md generated from .kiro/specs/curse-engine/design.md (do not edit; engine untouched anyway). Root script curse:check runs engine properties + grimmod sim:fixtures; .kiro/hooks/resim-on-curse-save.json matcher is \\.curse$|... so packs/**/*.curse trigger it (optionally extend curse:check/sim script for deadbeat and pack; hook files may be edited).",
+  "setup_instructions": "pnpm install --frozen-lockfile (deps already installed in sandbox; baseline verified green). After adding apps/deadbeat dependencies, run `pnpm install` once to update pnpm-lock.yaml, commit lockfile, then confirm --frozen-lockfile passes. Prefer reusing exact dependency versions from apps/grimmod/package.json.",
+  "environment_constraints": "No pushing/PRs (orchestrator pushes); commit locally on main with existing git identity (Kiro Agent), do not modify git config. No deploys, DB, external services or real email: the mail adapter writes to an in-memory outbox only. packages/curse-engine MUST NOT be modified at all.",
+  "contribution_requirements": "en-GB in prose; no em dashes in written content; keep inviolables (.kiro/steering/inviolables.md): no exfiltration, simulator never executes side effects, every action reversible. Keep ratified semantics (docs/grammar.md Executor semantics).",
+  "key_patterns": "GrimMod: src/lib/{host,adapter,chat-state,grimoire,fixtures,graph,http}.ts, singleton host via globalThis (getHost/resetHost/refreshFixtures), fixtures with stable ids + REFERENCE_NOW, GrimoireRepository wrapping engine AuditLog, grimoire.reverse(entryId, inverse, now) appends a reversal entry, API routes in app/api/{curses,curses/[id]/graph,curses/[id]/simulate,events,fixtures,grimoire,grimoire/[id]/undo,health,reset}/route.ts, components in src/components/{GrimMod,Grimoire,RuleGraph,Simulator}.tsx. Engine: executor handles type 'tick' events with .interval for `every` curses (durationMs match), fields bag, `email <template> to <field>` calls capability email({curse,eventId,template,to}); tick events not stored in history; executor itself dedupes nothing, host must. GrimMod's viewOf marks email as non-reversible; Deadbeat must make email reversible via an inverse that marks the outbox entry retracted.",
+  "relevant_files": [
+    "apps/grimmod/** (pattern)",
+    "apps/deadbeat/package.json",
+    "apps/deadbeat/README.md",
+    "packages/curse-engine/src/index.ts (read only)",
+    "packages/curse-engine/src/executor.ts (read only)",
+    "packages/curse-engine/src/grimoire.ts (read only)",
+    "packages/curse-engine/src/simulator.ts (read only)",
+    "pnpm-workspace.yaml",
+    "package.json",
+    "README.md",
+    ".kiro/hooks/resim-on-curse-save.json",
+    "docs/grammar.md"
+  ],
+  "directory_structure": "apps/ packages/ docs/ .kiro/ (specs, steering, hooks); new: packs/standup/"
+}

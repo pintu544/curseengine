@@ -27,13 +27,18 @@ Scripts use webpack (`--webpack`) because the engine is consumed from TypeScript
 | `src/lib/graph.ts` | Curse AST to rule-graph nodes and edges |
 | `app/api/*` | `POST /api/curses`, `GET /api/curses/:id/graph`, `GET`/`POST /api/events`, `GET /api/health`, `POST /api/reset` |
 
+## FR9 kill switch
+One flag at the host boundary silences this app: set `CURSE_ENGINE_ENABLED=off` (also `0` or `false`, any case) before starting the server. It defaults to on. It is read on every call, and `host.setEngineEnabled(false)` overrides it in code (used by the tests).
+
+While it is off, `POST /api/events` returns **503** (`host.receive` throws `EngineDisabledError`) with `{disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message}` and nothing else happens: no chat message is stored, no decision is made, no mute or escalation is applied, and no grimoire entry is written. `GET /api/health` reports `engineEnabled`. Reading state and undoing earlier grimoire entries stay available, because undo only reverses what the engine already did. Turn the flag back on and normal behaviour resumes. Proof: `test/killswitch.test.ts`.
+
 ## Behaviour notes
 - Fixture history is display only. The executor sees live events, so counts start from zero.
 - A muted author's later messages are stored as muted and are not fed to the executor, so a mute and an escalation happen once, not on every further message.
 - Installing or replacing a curse keeps the executor, so count history and per-curse quota usage survive. The curse list is edited in place, and the engine reads it by reference, so `packages/curse-engine/src` needed no change. Replacing a curse keeps the quota usage recorded under its name. `POST /api/reset` clears everything.
 - A curse that uses an undeclared capability (for example `email`) installs fine. On each event it gets a `failed` decision record (kept in the decision log), `POST /api/events` still returns 200, and other curses still run. Such a curse runs in its own executor, which only sees events from its install onwards, so its condition counts can be lower than those of a normal curse.
 - The message is always stored in chat, even when a curse fails on it.
-- No host code emits `tick` events, so `every` curses install and show a graph but do not run in GrimMod yet.
+- GrimMod emits no `tick` events, so `every` curses install and show a graph but do not run here (Deadbeat is the tick host).
 - A muted author's earlier flagged events still count after the mute expires, so the next flagged message mutes again straight away.
 - Single process only: state is held in memory on `globalThis`, and each server instance has its own.
 

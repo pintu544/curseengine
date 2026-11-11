@@ -1,0 +1,1 @@
+curse blocked-three-days: when standup where count(standup by same member flagged) >= 3 within 7 days -> escalate to owner

@@ -1,8 +1,31 @@
 {
   "name": "@curseengine/deadbeat",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Placeholder - Next.js + Tailwind app arrives in a later slice.",
-  "dependencies": { "@curseengine/engine": "workspace:*" }
+  "description": "Deadbeat: invoice-chasing demo on the unmodified CurseEngine (Next.js + Tailwind).",
+  "scripts": {
+    "dev": "next dev --webpack -p 3001",
+    "build": "next build --webpack",
+    "start": "next start -p 3001",
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "sim:fixtures": "vitest --run test/fixtures.test.ts test/simulate.test.ts test/grimoire.test.ts"
+  },
+  "dependencies": {
+    "@curseengine/engine": "workspace:*",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
 }

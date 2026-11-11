@@ -1,0 +1,21 @@
+{
+  "name": "@curseengine/pack-standup",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Standup digest rule-pack: a third, tiny application of the unmodified CurseEngine (curses and a dry run, no app).",
+  "type": "module",
+  "scripts": {
+    "test": "vitest --run",
+    "typecheck": "tsc --noEmit",
+    "sim:pack": "vitest --run"
+  },
+  "dependencies": {
+    "@curseengine/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  }
+}

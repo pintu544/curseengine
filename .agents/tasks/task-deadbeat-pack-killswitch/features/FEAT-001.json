@@ -1,0 +1,20 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Environment baseline: confirm frozen install, 118 tests (74 engine + 44 grimmod) and typecheck are green before changes.",
+  "status": "completed",
+  "steps": [
+    "Run pnpm install --frozen-lockfile, pnpm test, pnpm typecheck at repo root",
+    "Record totals in findings; record `git rev-parse HEAD` (expected e07fdb1)"
+  ],
+  "acceptance_criteria": [
+    "Baseline green with 118 tests"
+  ],
+  "verification": [
+    "pnpm install --frozen-lockfile",
+    "pnpm test",
+    "pnpm typecheck"
+  ],
+  "blocked_reason": null,
+  "findings": "Frozen install ok; engine 74 + grimmod 44 = 118 tests pass; HEAD e07fdb1."
+}

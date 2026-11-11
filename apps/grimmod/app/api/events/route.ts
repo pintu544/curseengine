@@ -1,5 +1,5 @@
 import { DEFAULT_CHANNEL } from "@/lib/fixtures";
-import { getHost } from "@/lib/host";
+import { EngineDisabledError, getHost } from "@/lib/host";
 import { json, readJson } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export async function POST(req: Request): Promise<Response> {
     return json({ message: 'Body must include non-empty string "author" and "text".' }, 400);
   }
   const host = getHost();
+  if (!host.engineEnabled) return json({ disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message: new EngineDisabledError().message }, 503);
   const last = host.chat.messages.at(-1)?.at ?? 0;
   counter += 1;
   const msg = {
@@ -35,5 +36,10 @@ export async function POST(req: Request): Promise<Response> {
     at: Math.max(Date.now(), last + 1),
     flagged: body?.["flagged"] === true,
   };
-  return json(await host.receive(msg));
+  try {
+    return json(await host.receive(msg));
+  } catch (err) {
+    if (err instanceof EngineDisabledError) return json({ disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message: err.message }, 503);
+    throw err;
+  }
 }

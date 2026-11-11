@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "T3.2 kill switch in both apps, packs/standup rule-pack, README status update (depends on FEAT-002; the pack part is independent of the apps).",
+  "status": "completed",
+  "steps": [
+    "Kill switch FR9: one engine-enabled flag at each host boundary (CURSE_ENGINE_ENABLED env, default on, values 0/false/off disable; plus a host constructor option for tests) in apps/grimmod/src/lib/host.ts and apps/deadbeat/src/lib/host.ts. When off, event intake (grimmod receive / POST /api/events, deadbeat tick / POST /api/events) returns a clear disabled response (HTTP 503 with a JSON message naming the kill switch), and NO decisions, mute, emails, outbox entries, escalations, chat state changes or grimoire entries are produced; /api/health reports engineEnabled. Reads and undo of earlier entries stay available. Do not change packages/curse-engine. Existing grimmod behaviour unchanged when on",
+    "Tests: apps/grimmod/test/killswitch.test.ts and apps/deadbeat/test/killswitch.test.ts: engine off -> grimmod burst / deadbeat tick produce zero side effects and zero grimoire growth (assert grimoire length, decisions, chat or outbox snapshots unchanged, and API returns disabled response); engine on -> normal behaviour resumes (including toggling off then on). Name tests clearly, with 'kill switch' in the describe name",
+    "Document the switch as the FR9 kill switch in both apps' READMEs and the repo README",
+    "packs/standup/: README.md (team standup/digest bot: scheduled, team-internal, informational; vocabulary: events standup, actions post/escalate only; contrast with GrimMod and Deadbeat; note that *.curse files here are what the resim hook trigger in .kiro/hooks/resim-on-curse-save.json matches), 2-3 example .curse files (grammar-valid, uses only `standup` events and post/escalate), a small vitest test (or runnable script) running those curses through the engine's simulate() over a tiny fixture history and printing the report; decide where it lives so it runs under `pnpm test` (e.g. packs/standup/package.json named @curseengine/pack-standup with test script, add packs/* to pnpm-workspace.yaml, update pnpm-lock.yaml, confirm frozen install). Extend root curse:check or the hook if sensible",
+    "Root README.md: update Layout and Status sections: two apps + one rule-pack on one engine; contrast sentence (moderation = real-time, high-volume, safety-critical, human-in-loop; invoicing = scheduled, low-volume, money-adjacent, tone-critical; standup pack = scheduled, team-internal, informational, new vocabulary, new rules, new actions; zero engine changes); clone-to-install-to-test instructions (pnpm install --frozen-lockfile, pnpm test, pnpm typecheck) and how to run each app; fix stale statements (deadbeat placeholder, 'no host emits tick events')",
+    "Commit all work locally on main (existing identity) including .agents/tasks if sensible"
+  ],
+  "acceptance_criteria": [
+    "pnpm test passes at root including killswitch tests for both apps and the standup pack test",
+    "pnpm typecheck passes",
+    "git diff e07fdb1 -- packages/curse-engine is empty",
+    "From clean node_modules, pnpm install --frozen-lockfile passes"
+  ],
+  "verification": [
+    "rm -rf node_modules apps/*/node_modules packages/*/node_modules packs/*/node_modules && pnpm install --frozen-lockfile",
+    "pnpm test",
+    "pnpm typecheck",
+    "git diff --stat e07fdb1 -- packages/curse-engine"
+  ],
+  "blocked_reason": null,
+  "findings": "Kill switch: CURSE_ENGINE_ENABLED (0/false/off) read per call plus host.setEngineEnabled override; GrimModHost.receive and DeadbeatHost.advanceClock/intake throw EngineDisabledError; POST /api/events returns 503 {disabled,killSwitch,message}; /api/health has engineEnabled (health tests updated). Killswitch tests: grimmod 5, deadbeat 4. packs/standup (@curseengine/pack-standup, 3 curses, 2 tests) added to workspace and lockfile; curse:check extended with deadbeat sim and pack. Totals: engine 74 + grimmod 49 + deadbeat 31 + standup 2 = 156. Clean frozen install, test, typecheck, deadbeat build pass; engine diff empty."
+}

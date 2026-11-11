@@ -1,0 +1,11 @@
+{
+  "task_id": "task-deadbeat-pack-killswitch",
+  "task_description": "Slice 3 part 1: Deadbeat app, standup rule-pack, FR9 kill switch in both apps, README update; engine untouched",
+  "status": "in_progress",
+  "feature_order": [
+    "FEAT-001",
+    "FEAT-002",
+    "FEAT-003"
+  ],
+  "blocked_reason": null
+}

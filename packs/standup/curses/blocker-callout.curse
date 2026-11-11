@@ -1,0 +1,1 @@
+curse blocker-callout: when standup where flagged = true and update contains "blocked" -> post "A blocker was raised in standup" to team-standup; escalate to owner

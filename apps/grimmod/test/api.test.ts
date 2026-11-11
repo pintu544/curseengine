@@ -131,6 +131,6 @@ describe("POST /api/reset", () => {
 
 describe("GET /api/health", () => {
   it("is ok", async () => {
-    expect(await (await health()).json()).toEqual({ ok: true, app: "grimmod" });
+    expect(await (await health()).json()).toEqual({ ok: true, app: "grimmod", engineEnabled: true });
   });
 });

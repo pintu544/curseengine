@@ -8,7 +8,7 @@
   "scripts": {
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck",
-    "curse:check": "pnpm --filter @curseengine/engine run test:properties && pnpm --filter @curseengine/grimmod run sim:fixtures"
+    "curse:check": "pnpm --filter @curseengine/engine run test:properties && pnpm --filter @curseengine/grimmod run sim:fixtures && pnpm --filter @curseengine/deadbeat run sim:fixtures && pnpm --filter @curseengine/pack-standup run sim:pack"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

@@ -1,0 +1,32 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "T3.1 Deadbeat app: Next.js + Tailwind invoice-chasing app in apps/deadbeat mirroring apps/grimmod, using the unmodified engine.",
+  "status": "completed",
+  "steps": [
+    "Replace apps/deadbeat/package.json (name @curseengine/deadbeat, scripts dev/build/start/test/typecheck/sim:fixtures, same dependency versions as apps/grimmod, different dev port e.g. 3001), add next.config.mjs, postcss.config.mjs, tsconfig.json, vitest.config.ts, app/{layout,page}.tsx, app/globals.css copied from the grimmod patterns; run pnpm install to update pnpm-lock.yaml",
+    "src/lib/fixtures.ts: REFERENCE_NOW fixed clock; stable-id clients and invoices (e.g. inv-001..inv-005) with days_overdue 3, 8, 15, 22, 40 at the reference clock, amount, client name, client email as fields; the late-payers curse source(s) as constants: tier 1 `curse late-payers: every 1 day where days_overdue >= 7 -> email polite-nudge to client`, tier 2 (>=14, template firm-reminder) and tier 3 (>=21, `escalate to owner`) as separate curses (e.g. late-payers-firm, late-payers-escalate); fixture history for simulate",
+    "src/lib/invoice-state.ts (repository-style state: invoices, clock, outbox entries {id,to,template,invoiceId,curse,at,retracted}, escalations, sent-tier tracking), src/lib/adapter.ts (mail adapter declaring email and escalate; email resolves template names polite-nudge and firm-reminder to subject/body text and writes ONLY to the in-memory outbox; never a real send), src/lib/grimoire.ts (GrimoireRepository wrapping engine AuditLog; inverse for email marks outbox entry retracted, entry stays, reversal entry appended; escalate inverse retracts the escalation; viewOf must show email entries as reversible), src/lib/host.ts (DeadbeatHost with install, advanceClock/tick, undo, getHost/resetHost/refreshFixtures, curseStore), src/lib/graph.ts and http.ts following grimmod",
+    "Tick semantics: advancing the clock by one day (+1 day, clock moves forward only) increments each invoice days_overdue and emits ONE engine event of type 'tick' with interval '1 day' (check EngineEvent shape in executor.ts) per invoice, subject = the invoice, fields incl. days_overdue, client (email address used by email target; also keep client name as another field), amount, invoice id. Each invoice receives each tier at most once across repeated ticks: track sent tiers host-side so a second tick on the same day (POST with advance 0 days or repeated call) must not duplicate emails, decisions marked taken, or grimoire entries; do not record phantom taken actions for duplicates. Undoing an email does not allow re-send within same tier (document the choice)",
+    "Engine-enabled flag is added in FEAT-003; leave a clean single choke point in host intake for it",
+    "API routes under apps/deadbeat/app/api mirroring grimmod: POST /api/curses (201 with graph, 422 on parse error), GET /api/curses/[id]/graph, POST /api/curses/[id]/simulate (never touches outbox or invoice state), POST /api/events (clock tick, body e.g. {days?: number} default 1; 400 on bad input), GET /api/events (invoices, clock, outbox), GET /api/grimoire, POST /api/grimoire/[id]/undo, GET /api/health, POST /api/reset (same honest reset labelling as grimmod: reports it restores fixtures and removes curses/clears state), GET /api/fixtures if grimmod has the equivalent",
+    "UI src/components: Deadbeat.tsx (invoice list: client, amount, days overdue, status; +1 day clock control; outbox list with to, template, invoice, timestamp, retracted marker), reuse the GrimMod patterns for curse editor, RuleGraph.tsx, Simulator.tsx, Grimoire.tsx with undo",
+    "Tests in apps/deadbeat/test/ (vitest) with descriptive names: tick tier-1 test (reference clock, +1 day: exactly the >=7-day invoices' tier-1 emails in outbox, nothing for the 3-day invoice); tiers 2 and 3 fire once each when 14 and 21 are crossed (escalation entry appears, exactly once); repeated tick same day produces no duplicates; simulate over fixture history leaves outbox, invoice state and grimoire untouched; undo marks outbox entry retracted with a reversal entry and the original remains; API tests (201/422 + graph, graph, simulate, events, grimoire, undo, health, reset labelling); fixtures contract test (stable ids, idempotent refresh)",
+    "README.md for apps/deadbeat (what it is, run commands, API table, limits)"
+  ],
+  "acceptance_criteria": [
+    "pnpm --filter @curseengine/deadbeat test passes with the named tier tests",
+    "pnpm --filter @curseengine/deadbeat typecheck and build pass",
+    "git diff e07fdb1 -- packages/curse-engine is empty",
+    "pnpm install --frozen-lockfile passes after lockfile update"
+  ],
+  "verification": [
+    "pnpm install --frozen-lockfile",
+    "pnpm --filter @curseengine/deadbeat test",
+    "pnpm --filter @curseengine/deadbeat typecheck",
+    "pnpm --filter @curseengine/deadbeat build",
+    "git diff --stat e07fdb1 -- packages/curse-engine"
+  ],
+  "blocked_reason": null,
+  "findings": "apps/deadbeat built mirroring grimmod (port 3001). 27 deadbeat tests pass; full pnpm test = engine 74 + grimmod 44 + deadbeat 27; typecheck and build pass; frozen lockfile ok; packages/curse-engine diff empty. Design: host.intake(event, invoice) is the single choke point for FEAT-003 (executor is handed only curses not yet sent for that invoice via an in-place `active` array; sent-tracking keyed (invoice, curse name), a curse counts as sent when a decision took any action). Undo does not re-arm a tier. First +1 day tick is a catch-up: older invoices get tiers 1-3 at once (inv-002..005 tier 1; tiers 2/3 for >=14/>=21). Simulation = one tick per invoice at reference clock (summary line '4 emailed, 0 escalated' for late-payers). POST /api/reset and /api/fixtures return reset:true; reset does not install curses. Not committed (per orchestrator)."
+}

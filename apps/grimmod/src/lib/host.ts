@@ -10,6 +10,23 @@ import { chatInverse, createGrimoire, type GrimoireRepository } from "./grimoire
  */
 export const DEMO_QUOTA_PER_HOUR = 1000;
 
+/** Name of the FR9 kill switch environment variable. `0`, `false` or `off` (any case) disables the engine. */
+export const ENGINE_ENABLED_ENV = "CURSE_ENGINE_ENABLED";
+
+/** Reads the kill switch from the environment: on unless explicitly set to 0, false or off. */
+export function engineEnabledFromEnv(env: Record<string, string | undefined> = process.env): boolean {
+  const v = env[ENGINE_ENABLED_ENV]?.trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "off");
+}
+
+/** Thrown by event intake while the FR9 kill switch is off. Nothing has been recorded or executed. */
+export class EngineDisabledError extends Error {
+  constructor() {
+    super(`The curse engine is disabled (kill switch: ${ENGINE_ENABLED_ENV}=off). No event was processed and no action was taken.`);
+    this.name = "EngineDisabledError";
+  }
+}
+
 export type IncomingMessage = Omit<ChatMessage, "muted" | "system">;
 
 export interface HostResult {
@@ -50,6 +67,11 @@ export class GrimModHost {
   /** Messages that arrived while their author was muted: no decision, no grimoire entry. */
   readonly suppressed: SuppressedMessage[] = [];
   private pendingRefs: string[] = [];
+  /**
+   * FR9 kill switch. When false, receive() refuses before touching chat state, the executor or the grimoire.
+   * Unset means "follow the environment variable", read on every call so it can be flipped without a restart.
+   */
+  private engineOverride: boolean | undefined;
 
   constructor(now: number = Date.now(), private readonly quotaPerHour: number = DEMO_QUOTA_PER_HOUR) {
     this.chat = new ChatState(fixtureHistory(now));
@@ -73,6 +95,16 @@ export class GrimModHost {
     else this.refused.set(curse.name, createExecutor({ curses: [curse], capabilities: this.capabilities, quotaPerHour: this.quotaPerHour }));
   }
 
+  /** True while the engine may process events (FR9 kill switch). */
+  get engineEnabled(): boolean {
+    return this.engineOverride ?? engineEnabledFromEnv();
+  }
+
+  /** Turns the engine on or off for this host (overrides the environment variable); `undefined` returns to the environment. */
+  setEngineEnabled(enabled: boolean | undefined): void {
+    this.engineOverride = enabled;
+  }
+
   getCurses(): Curse[] {
     return [...this.curses];
   }
@@ -83,6 +115,8 @@ export class GrimModHost {
    * stops other curses from running.
    */
   async receive(msg: IncomingMessage): Promise<HostResult> {
+    // FR9 kill switch: the single intake choke point. Off means no chat change, no decision, no grimoire entry.
+    if (!this.engineEnabled) throw new EngineDisabledError();
     // The host clock never moves backwards: a backdated message is treated as arriving "now",
     // so mute windows and count windows anchor to one monotonic clock.
     this.chat.now = Math.max(this.chat.now, msg.at);
