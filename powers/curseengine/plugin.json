@@ -1,0 +1,7 @@
+{
+  "name": "curseengine",
+  "version": "1.0.0",
+  "description": "CurseEngine: a small frozen-grammar rule language for automating moderation and invoice chasing, with skills to author and audit curses.",
+  "author": { "name": "Pintu Kumar" },
+  "keywords": ["automation", "rules", "moderation", "invoices", "kiro"]
+}

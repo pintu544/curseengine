@@ -98,7 +98,32 @@ PBT also shaped the engine defensively elsewhere: an adversarial QA pass found a
 
 ### 8. Kiro Powers
 
-I did not use Kiro Powers. The build's integrations were hooks and the repo's own tooling; no third-party service needed steering-plus-MCP bundling (the one external system, Azure Database for PostgreSQL, is reached through a plain connection string behind the apps' repository interface). Rather than bolt on a Power for the checklist, the time went into the hook suite and the property tests, which are the parts of this project a Power would have had to beat to earn its place.
+The main build did not use a Power: its integrations were hooks and the repo's own tooling, and no third-party service needed steering-plus-MCP bundling. Afterwards (2026-11-11) I built a skills-only Power, `powers/curseengine/`, and tested it. Result: **it installs, but the skill did not activate in the one chat test, so I do not claim the Power works end to end.**
+
+What was built (no `mcp.json`, nothing under `packages/` or `apps/` touched):
+
+- `plugin.json`: name `curseengine`, version `1.0.0`, author Pintu Kumar, keywords automation, rules, moderation, invoices, kiro.
+- `skills/author-a-curse/SKILL.md` plus `references/grammar.md` (verbatim copy of `docs/grammar.md`): the GrimMod and Deadbeat example curses, flat and/or evaluation, missing field = false, case-sensitive `contains`/`matches`, and install warnings for triggers that can never fire in the host.
+- `skills/audit-a-pack/SKILL.md` plus `references/inviolables.md` (copy of `.kiro/steering/inviolables.md`): the four audit classes, pointing at the `grimoire-auditor` custom agent.
+
+Test 1, install (kiro-cli 3.2.0), run from the repo root:
+
+```
+kiro-cli powers install /home/hatch/workspace/.verify-slice4/powers/curseengine
+Installed power "curseengine"
+```
+
+Exit code 0. The files appeared under `~/.kiro/powers/installed/curseengine/` (`plugin.json`, both skills with their references).
+
+Test 2, activation, from the empty scratch directory `/tmp/scratch-curse`:
+
+```
+kiro-cli --v3 chat --no-interactive "Write a GrimMod curse that mutes an author after 3 flagged messages in 7 days. Output the curse line."
+```
+
+Exit code 0, but **the author-a-curse skill was not used**. The agent said it was not familiar with GrimMod syntax, ran a workspace grep (empty directory), then tried `web_search` twice; both were denied (`tool permission approval is not supported in non-interactive mode`). It produced no curse line, only a pseudo-code sketch (`trigger: message flagged / condition: count(flags by author) >= 3 within 7d / action: mute author`) which is **not grammar-valid** against `docs/grammar.md`. No `disclose_context`/skill call appeared in the output. The `audit-a-pack` skill and the `grimoire-auditor` hand-off were not tested.
+
+Test 3, activation retried with the gaps closed (same evening, by the reviewing agent): two further `--v3 chat --no-interactive --trust-all-tools` runs whose prompts explicitly named the skill ("Use the author-a-curse skill from the installed curseengine power…"), one in a scratch directory and one in this repo. The Power is verifiably installed on disk (`~/.kiro/powers/installed/curseengine/` plus an `installed.json` entry), yet in both runs the agent answered that the curseengine power "isn't installed" and that it could not run the skill. (In the repo run it still produced the exact grammar-valid GrimMod example curse — from the spec files, not from the skill.) Conclusion, stated plainly: **the Power installs cleanly, but Kiro CLI V3 chat does not surface an installed Power's skills to the agent in this build**, so activation could not be demonstrated on the CLI either. The IDE surface was not available to test. The Power is published in this repo (`powers/curseengine/`) as a well-formed, installable artefact; skill activation inside a session remains undemonstrated on every surface tried (Web cannot create Powers; CLI installs but does not surface them).
 
 ## What the loop looked like, end to end
 
