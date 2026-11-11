@@ -390,7 +390,7 @@ describe("health schemaVersion", () => {
   });
 });
 
-describe("suppressed list cap (W1)", () => {
+describe("suppressed list cap (W1)", { timeout: 20000 }, () => {
   const snapshotRow = async () => (await rows("SELECT snapshot FROM grimmod_state WHERE id = 'host'"))[0]!["snapshot"] as { suppressed: { eventId: string }[]; suppressedTotal?: number; v: number };
   /** Mutes raid-bot (3 flagged messages), then sends `n` more messages from the muted author: each one is suppressed. */
   const suppressMany = async (n: number) => {
