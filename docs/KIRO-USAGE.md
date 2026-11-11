@@ -3,7 +3,7 @@
 *Kiroween 2026 · Skeleton Crew · solo build by Pintu Kumar*
 *Repo: https://github.com/pintu544/curseengine — the `/.kiro` folder is in the repo root, exactly as it was used.*
 
-CurseEngine was built entirely in **Kiro Web sessions** — nine working sessions, thirteen commits, roughly **50 of the 4,000 kiroween-26 credits**. No part of the engine or the apps was written outside Kiro; the only code-adjacent work done elsewhere was deployment packaging (zip assembly, Azure settings) and an independent adversarial QA pass after each slice, whose findings were fed back into the specs and fixed in new Kiro sessions.
+CurseEngine was built entirely in **Kiro Web sessions** — nine working sessions, roughly **50 of the 4,000 kiroween-26 credits**. No part of the engine or the apps was written outside Kiro; the only code-adjacent work done elsewhere was deployment packaging (zip assembly, Azure settings) and an independent adversarial QA pass after each slice, whose findings were fed back into the specs and fixed in new Kiro sessions.
 
 ## The build at a glance
 
