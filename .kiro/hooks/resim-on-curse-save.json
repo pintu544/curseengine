@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Re-simulate curses and run property tests on curse save",
+      "trigger": "PostFileSave",
+      "description": "When a curse source or the curse save/execute path changes, re-run the fixture-history simulation and the property tests; a non-zero exit surfaces the failure",
+      "matcher": "\\.curse$|apps/grimmod/src/lib/fixtures\\.ts$|apps/grimmod/app/api/curses/route\\.ts$|packages/curse-engine/src/(executor|simulator|grimoire)\\.ts$",
+      "action": {
+        "type": "command",
+        "command": "pnpm run curse:check"
+      }
+    }
+  ]
+}

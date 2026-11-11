@@ -54,6 +54,33 @@ export class ChatState {
     this.escalations.push(e);
   }
 
+  /**
+   * Inverse of addMute: removes one mute entry (the first matching author, curse and triggering event).
+   * Takes effect immediately. Returns false when no such mute exists.
+   */
+  liftMute(author: string, curse: string, eventId: string): boolean {
+    const i = this.mutes.findIndex((m) => m.author === author && m.curse === curse && m.eventId === eventId);
+    if (i < 0) return false;
+    this.mutes.splice(i, 1);
+    return true;
+  }
+
+  /** Inverse of the post capability: retracts a curse-posted message by id. */
+  retractMessage(id: string): boolean {
+    const i = this.messages.findIndex((m) => m.id === id && m.system === true);
+    if (i < 0) return false;
+    this.messages.splice(i, 1);
+    return true;
+  }
+
+  /** Inverse of the escalate capability: retracts an escalation by id. */
+  retractEscalation(id: string): boolean {
+    const i = this.escalations.findIndex((e) => e.id === id);
+    if (i < 0) return false;
+    this.escalations.splice(i, 1);
+    return true;
+  }
+
   find(id: string): ChatMessage | undefined {
     return this.messages.find((m) => m.id === id);
   }

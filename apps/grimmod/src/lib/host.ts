@@ -1,7 +1,8 @@
-import { createExecutor, hasCapability, UndeclaredCapabilityError, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
+import { createExecutor, hasCapability, parseCurse, type AuditEntry, UndeclaredCapabilityError, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
 import { createChatAdapter } from "./adapter";
 import { ChatState, type ChatSnapshot } from "./chat-state";
-import { fixtureHistory, type ChatMessage } from "./fixtures";
+import { EXAMPLE_CURSE, fixtureHistory, REFERENCE_NOW, type ChatMessage } from "./fixtures";
+import { chatInverse, createGrimoire, type GrimoireRepository } from "./grimoire";
 
 /**
  * Demo quota: curse runs allowed per curse per rolling hour. Set well above anything a
@@ -16,6 +17,13 @@ export interface HostResult {
   decisions: DecisionRecord[];
   chat: ChatSnapshot;
 }
+
+/** Converts a chat message to the engine event the executor (and the simulator) sees. */
+export function toEngineEvent(m: Pick<ChatMessage, "id" | "author" | "channel" | "text" | "at" | "flagged">): EngineEvent {
+  return { id: m.id, type: "message", at: m.at, flagged: m.flagged, fields: { author: m.author, channel: m.channel, text: m.text, flagged: m.flagged } };
+}
+
+export interface SuppressedMessage { eventId: string; author: string; at: number }
 
 /** The app side of the engine: holds curses, feeds chat messages as events, applies actions to chat state. */
 export class GrimModHost {
@@ -37,10 +45,15 @@ export class GrimModHost {
   private readonly refused = new Map<string, Executor>();
   /** Every decision record since the host started, in order. */
   readonly decisions: DecisionRecord[] = [];
+  /** Audit log (grimoire): one entry per executed action, append-only. */
+  readonly grimoire: GrimoireRepository = createGrimoire();
+  /** Messages that arrived while their author was muted: no decision, no grimoire entry. */
+  readonly suppressed: SuppressedMessage[] = [];
+  private pendingRefs: string[] = [];
 
   constructor(now: number = Date.now(), private readonly quotaPerHour: number = DEMO_QUOTA_PER_HOUR) {
     this.chat = new ChatState(fixtureHistory(now));
-    this.capabilities = createChatAdapter(this.chat);
+    this.capabilities = createChatAdapter(this.chat, (ref) => this.pendingRefs.push(ref));
     this.executor = createExecutor({ curses: this.runnable, capabilities: this.capabilities, quotaPerHour });
   }
 
@@ -75,14 +88,12 @@ export class GrimModHost {
     this.chat.now = Math.max(this.chat.now, msg.at);
     const stored = this.chat.addMessage({ ...msg, at: this.chat.now });
     // A muted author's message is suppressed: shown as muted, never fed to the executor.
-    if (stored.muted) return { message: { ...stored }, decisions: [], chat: this.chat.snapshot() };
-    const event: EngineEvent = {
-      id: stored.id,
-      type: "message",
-      at: stored.at,
-      flagged: stored.flagged,
-      fields: { author: stored.author, channel: stored.channel, text: stored.text, flagged: stored.flagged },
-    };
+    if (stored.muted) {
+      this.suppressed.push({ eventId: stored.id, author: stored.author, at: stored.at });
+      return { message: { ...stored }, decisions: [], chat: this.chat.snapshot() };
+    }
+    const event = toEngineEvent(stored);
+    this.pendingRefs = [];
     const decisions: DecisionRecord[] = [];
     try {
       decisions.push(...(await this.executor.handle(event)));
@@ -99,7 +110,21 @@ export class GrimModHost {
       }
     }
     this.decisions.push(...decisions);
+    // Every taken action gets exactly one grimoire entry, in order. Refs align with taken actions.
+    const summary = `message from ${stored.author}: "${stored.text.length > 80 ? `${stored.text.slice(0, 80)}...` : stored.text}"`;
+    let k = 0;
+    for (const rec of decisions) {
+      const n = rec.actions.filter((a) => a.status === "taken").length;
+      this.grimoire.recordDecision(rec, summary, this.pendingRefs.slice(k, k + n));
+      k += n;
+    }
+    this.pendingRefs = [];
     return { message: { ...stored }, decisions, chat: this.chat.snapshot() };
+  }
+
+  /** One-click undo: runs the inverse, then appends a reversal entry referencing the original. */
+  undo(entryId: string): AuditEntry {
+    return this.grimoire.reverse(entryId, chatInverse(this.chat), this.chat.now);
   }
 }
 
@@ -117,6 +142,18 @@ export function resetHost(now?: number): GrimModHost {
   g[KEY] = new GrimModHost(now);
   g.__grimmodGraphs = new Map();
   return g[KEY];
+}
+
+/**
+ * Loads (or refreshes) the fixture set: the host is rebuilt from scratch at REFERENCE_NOW and the example
+ * curse installed. Idempotent: calling it twice yields identical state.
+ */
+export function refreshFixtures(): GrimModHost {
+  const host = resetHost(REFERENCE_NOW);
+  const curse = parseCurse(EXAMPLE_CURSE);
+  curseStore().set(curse.name, curse);
+  host.install(curse);
+  return host;
 }
 
 /** Curse store keyed by generated id (graph lookups). */

@@ -7,3 +7,11 @@ export {
   type Capabilities, type CapabilityName, type EngineEvent, type ExecutorOptions,
   type DecisionRecord, type ConditionRecord, type ActionRecord,
 } from "./executor.js";
+export {
+  simulate, summaryLine,
+  type IntendedAction, type SimulateOptions, type SimulationReport, type SimulationSummary, type SuppressedEvent, type KindCounts,
+} from "./simulator.js";
+export {
+  AuditLog, AlreadyReversedError, NotReversibleError, UnknownEntryError,
+  type AuditEntry, type NewAuditEntry, type Inverse,
+} from "./grimoire.js";

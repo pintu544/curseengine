@@ -5,7 +5,9 @@ import type { DecisionRecord } from "@curseengine/engine";
 import type { ChatSnapshot } from "@/lib/chat-state";
 import { EXAMPLE_CURSE, RAID_BOT } from "@/lib/fixtures";
 import type { RuleGraph as Graph } from "@/lib/graph";
+import { Grimoire } from "./Grimoire";
 import { RuleGraph } from "./RuleGraph";
+import { Simulator } from "./Simulator";
 
 interface ParseError {
   line: number;
@@ -192,6 +194,12 @@ export function GrimMod() {
           </div>
         )}
       </section>
+
+      <Simulator curseId={graph?.name ?? "spam-strikes"} />
+      <Grimoire
+        version={`${chat?.messages.length ?? 0}-${chat?.mutes.length ?? 0}-${chat?.escalations.length ?? 0}`}
+        onUndone={() => void fetch("/api/events").then((r) => r.json()).then((d: { chat: ChatSnapshot }) => setChat(d.chat)).catch(() => undefined)}
+      />
     </main>
   );
 }

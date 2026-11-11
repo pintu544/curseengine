@@ -9,10 +9,10 @@
 - [ ] T1.6 Slice 1 adversarial QA + fixes + summary.
 
 ## Slice 2 — Simulator + grimoire
-- [ ] T2.1 Simulator ("3 muted, 0 false positives") _FR4_
-- [ ] T2.2 Property-based parity tests (≥1,000 cases) _NFR1_
-- [ ] T2.3 Grimoire UI + one-click undo _FR5, FR6_
-- [ ] T2.4 Fixture contract finalised
+- [x] T2.1 Simulator ("3 muted, 0 false positives") _FR4_
+- [x] T2.2 Property-based parity tests (≥1,000 cases) _NFR1_
+- [x] T2.3 Grimoire UI + one-click undo _FR5, FR6_
+- [x] T2.4 Fixture contract finalised
 - [ ] T2.5 Slice 2 QA
 
 ## Slice 3 — Deadbeat + submission

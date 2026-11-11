@@ -6,16 +6,19 @@ import type { ChatState } from "./chat-state";
  * `email` is deliberately left undeclared, so a curse that emails is refused by the sandbox.
  * Every effect is a reversible in-memory record; nothing leaves the process.
  */
-export function createChatAdapter(chat: ChatState): Capabilities {
+export function createChatAdapter(chat: ChatState, onEffect: (ref: string) => void = () => undefined): Capabilities {
   let seq = 0;
   return {
     mute({ curse, eventId, target, durationMs }) {
       chat.addMute({ author: target, curse, eventId, since: chat.now, until: chat.now + durationMs });
+      onEffect(muteRef(target, curse, eventId));
     },
     post({ curse, eventId, message, channel }) {
       seq += 1;
+      const id = `sys-${eventId}-${seq}`;
+      onEffect(id);
       chat.addMessage({
-        id: `sys-${eventId}-${seq}`,
+        id,
         author: `curse:${curse}`,
         channel,
         text: message,
@@ -27,8 +30,10 @@ export function createChatAdapter(chat: ChatState): Capabilities {
     escalate({ curse, eventId, to }) {
       seq += 1;
       const source = chat.find(eventId);
+      const id = `esc-${eventId}-${seq}`;
+      onEffect(id);
       chat.addEscalation({
-        id: `esc-${eventId}-${seq}`,
+        id,
         curse,
         eventId,
         at: chat.now,
@@ -41,3 +46,7 @@ export function createChatAdapter(chat: ChatState): Capabilities {
     },
   };
 }
+
+/** Grimoire reference for a mute effect; the inverse parses it back with `parseMuteRef`. */
+export const muteRef = (author: string, curse: string, eventId: string): string => JSON.stringify([author, curse, eventId]);
+export const parseMuteRef = (ref: string): [string, string, string] => JSON.parse(ref) as [string, string, string];

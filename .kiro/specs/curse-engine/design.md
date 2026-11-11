@@ -5,7 +5,7 @@ pnpm monorepo, one dependency direction (apps → engine, never the reverse):
 - `packages/curse-engine` — tokenizer, recursive-descent parser (typed AST), sandboxed executor, simulator, audit/undo log, adapter interfaces. Zero UI.
 - `apps/grimmod` — Next.js + Tailwind: demo chat, editor, rule-graph inspector, simulator report, grimoire.
 - `apps/deadbeat` — Next.js + Tailwind: invoices, escalation curse, outbox, grimoire.
-- Postgres (Neon) per app; engine is storage-agnostic behind a repository interface.
+- Postgres on Neon free tier per app (final owner decision 11 Nov 2026: Neon only); engine is storage-agnostic behind a repository interface.
 - `/.kiro` at root: specs, steering (three inviolables), hooks.
 
 Data flow: event enters via adapter → executor matches compiled curses → conditions evaluated over the event store → actions issued through adapter → every decision lands in the audit log. The simulator swaps the event source for fixture history and the adapter for a recording stub; nothing else changes.

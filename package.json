@@ -7,7 +7,8 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "pnpm -r --if-present test",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "curse:check": "pnpm --filter @curseengine/engine run test:properties && pnpm --filter @curseengine/grimmod run sim:fixtures"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

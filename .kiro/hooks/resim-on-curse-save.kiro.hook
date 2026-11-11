@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "name": "Re-simulate curses and run property tests on curse save",
+  "description": "When a curse source or the curse save/execute path changes, re-run the fixture-history simulation and the property tests (parity, dry-run purity, undo restoration, audit order). A non-zero exit surfaces the failure.",
+  "version": "1",
+  "when": { "type": "fileEdited", "patterns": ["**/*.curse", "apps/grimmod/src/lib/fixtures.ts", "apps/grimmod/app/api/curses/route.ts", "packages/curse-engine/src/executor.ts", "packages/curse-engine/src/simulator.ts", "packages/curse-engine/src/grimoire.ts"] },
+  "then": { "type": "runCommand", "command": "pnpm run curse:check" }
+}

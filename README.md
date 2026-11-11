@@ -40,7 +40,7 @@ pnpm --filter @curseengine/grimmod start   # http://localhost:3000
 In GrimMod, install the curse above, then press **Raid-bot burst**: the bot is muted live on its third flagged message and the escalation lands in the owner inbox.
 
 ## Status
-Slice 1 in progress: scaffold (T1.1), parser (T1.3), executor (T1.4) and the GrimMod shell (T1.5) done. Simulator, grimoire and Deadbeat follow — see `.kiro/specs/curse-engine/tasks.md`.
+Slice 1 done: scaffold (T1.1), parser (T1.3), executor (T1.4) and the GrimMod shell (T1.5) done. Slice 2 adds the simulator (`POST /api/curses/:id/simulate`), property-based parity/invariant tests, the grimoire with one-click undo and the fixture contract; Deadbeat follows — see `.kiro/specs/curse-engine/tasks.md`.
 
 ## Known limits and follow-ups
 GrimMod is a local, single-process demo. It has no authentication, does not cap memory growth, and does not bound `matches` patterns. No host emits `tick` events yet, so `every` curses install but do not run in GrimMod. Installing a curse keeps count history and quota state; `/api/reset` clears them. A curse that uses an undeclared capability (such as `email`) records a failed decision on each event without blocking other curses. The full list of follow-ups is in `apps/grimmod/README.md`.
