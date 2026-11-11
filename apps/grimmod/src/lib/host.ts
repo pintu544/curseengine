@@ -1,4 +1,4 @@
-import { createExecutor, UndeclaredCapabilityError, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
+import { createExecutor, hasCapability, UndeclaredCapabilityError, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
 import { createChatAdapter } from "./adapter";
 import { ChatState, type ChatSnapshot } from "./chat-state";
 import { fixtureHistory, type ChatMessage } from "./fixtures";
@@ -55,7 +55,7 @@ export class GrimModHost {
     const old = this.runnable.findIndex((c) => c.name === curse.name);
     if (old >= 0) this.runnable.splice(old, 1);
     this.refused.delete(curse.name);
-    const usable = curse.actions.every((a) => typeof this.capabilities[a.kind] === "function");
+    const usable = curse.actions.every((a) => hasCapability(this.capabilities, a.kind));
     if (usable) this.runnable.push(curse);
     else this.refused.set(curse.name, createExecutor({ curses: [curse], capabilities: this.capabilities, quotaPerHour: this.quotaPerHour }));
   }
@@ -70,8 +70,10 @@ export class GrimModHost {
    * stops other curses from running.
    */
   async receive(msg: IncomingMessage): Promise<HostResult> {
-    this.chat.now = msg.at;
-    const stored = this.chat.addMessage(msg);
+    // The host clock never moves backwards: a backdated message is treated as arriving "now",
+    // so mute windows and count windows anchor to one monotonic clock.
+    this.chat.now = Math.max(this.chat.now, msg.at);
+    const stored = this.chat.addMessage({ ...msg, at: this.chat.now });
     // A muted author's message is suppressed: shown as muted, never fed to the executor.
     if (stored.muted) return { message: { ...stored }, decisions: [], chat: this.chat.snapshot() };
     const event: EngineEvent = {

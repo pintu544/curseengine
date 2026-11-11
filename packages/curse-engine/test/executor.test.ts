@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createExecutor, parseCurse, UndeclaredCapabilityError, type Capabilities, type EngineEvent } from "../src/index.js";
+import { catastrophicShape, createExecutor, MATCH_SUBJECT_CAP, parseCurse, UndeclaredCapabilityError, type Capabilities, type EngineEvent } from "../src/index.js";
 
 const GRIMMOD =
   "curse spam-strikes: when message where count(message by same author flagged) >= 3 within 7 days -> mute author for 1 day; escalate to owner";
@@ -122,5 +122,156 @@ describe("hourly quota", () => {
     expect(recs[2]).toMatchObject({ matched: true, quota: { used: 2, limit: 2 }, actions: [{ status: "skipped", reason: expect.stringContaining("quota") }] });
     const later = (await ex.handle({ id: "late", type: "message", at: 3_700_000, fields: {} }))[0]!;
     expect(later.outcome).toBe("executed");
+  });
+});
+
+describe("matches: ReDoS guard", () => {
+  const run = async (pattern: string, text: string) => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [parseCurse(`curse r: when message where text matches "${pattern}" -> post "x" to ops`)], capabilities: caps, quotaPerHour: 10 });
+    const t0 = performance.now();
+    const [rec] = await ex.handle({ id: "e", type: "message", at: 0, fields: { text } });
+    return { rec: rec!, ms: performance.now() - t0 };
+  };
+
+  it("rejects ^(a+)+$ against a hostile subject in well under a second, noting the reason", async () => {
+    const { rec, ms } = await run("^(a+)+$", "a".repeat(40) + "!");
+    expect(ms).toBeLessThan(500);
+    expect(rec.matched).toBe(false);
+    expect(rec.conditions[0]).toMatchObject({ kind: "text", result: false, note: expect.stringContaining("pattern rejected") });
+  });
+
+  it("rejects the other nested-repetition shapes", () => {
+    for (const p of ["(a*)*", "(a+)+", "(a|a)+", "(a|aa)*", "((a+)?)+", "(\\w+\\s?)*$", "(a+){2,}", "(x+x+)+y"]) {
+      expect(catastrophicShape(p), p).toBeDefined();
+    }
+  });
+
+  it("allows ordinary patterns", () => {
+    for (const p of ["buy .* now", "^https?://", "^b.y", "(foo|bar)+", "(ab)+", "(a+)?", "(?:https?|ftp)://", "[a-z]+@[a-z]+\\.com", "a{2,3}b+", "(\\d{3})-(\\d{4})"]) {
+      expect(catastrophicShape(p), p).toBeUndefined();
+    }
+  });
+
+  it("still matches legitimate patterns correctly", async () => {
+    expect((await run("buy .* now", "please buy this now")).rec.matched).toBe(true);
+    expect((await run("buy .* now", "please sell this now")).rec.matched).toBe(false);
+    expect((await run("^https?://", "https://example.com")).rec.matched).toBe(true);
+    expect((await run("^https?://", "ftp://example.com")).rec.matched).toBe(false);
+  });
+
+  it("only considers the first 10,000 characters of the subject", async () => {
+    const text = "a".repeat(MATCH_SUBJECT_CAP) + "needle";
+    const r = await run("needle", text);
+    expect(r.rec.matched).toBe(false);
+    expect(r.rec.conditions[0]!.note).toMatch(/first 10000/);
+    expect((await run("^a+$", "a".repeat(MATCH_SUBJECT_CAP + 5))).rec.matched).toBe(true);
+  });
+
+  it("invalid regex still evaluates to false with a note", async () => {
+    const r = await run("(", "x");
+    expect(r.rec.conditions[0]).toMatchObject({ result: false, note: "invalid regular expression" });
+  });
+});
+
+describe("decision record fidelity for skipped actions", () => {
+  it("records a null target plus the unresolved field name, and the outcome is partial", async () => {
+    const { calls, caps } = stub();
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message -> mute reporter for 1 day; escalate to owner")], capabilities: caps, quotaPerHour: 10 });
+    const [rec] = await ex.handle({ id: "e", type: "message", at: 0, fields: { author: "bob" } });
+    expect(calls.map((c) => c.cap)).toEqual(["escalate"]);
+    expect(rec!.outcome).toBe("partial");
+    expect(rec!.actions[0]).toEqual({ kind: "mute", target: null, targetField: "reporter", status: "skipped", reason: 'event has no field "reporter"' });
+    expect(rec!.actions[1]).toMatchObject({ kind: "escalate", target: "owner", status: "taken" });
+    expect(rec!.quota.used).toBe(1); // a partial run is still a run
+  });
+
+  it("a fully executed run stays 'executed' and resolves real targets", async () => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message -> mute author for 1 day")], capabilities: caps, quotaPerHour: 10 });
+    const [rec] = await ex.handle({ id: "e", type: "message", at: 0, fields: { author: "bob" } });
+    expect(rec!.outcome).toBe("executed");
+    expect(rec!.actions[0]).toMatchObject({ target: "bob", status: "taken" });
+    expect(rec!.actions[0]).not.toHaveProperty("targetField");
+  });
+
+  it("never puts a field name in target for unmatched or quota-skipped runs", async () => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message where n > 1 -> mute author for 1 day")], capabilities: caps, quotaPerHour: 10 });
+    const [rec] = await ex.handle({ id: "e", type: "message", at: 0, fields: { author: "bob", n: 0 } });
+    expect(rec!.outcome).toBe("no-match");
+    expect(rec!.actions[0]).toMatchObject({ target: null, targetField: "author", status: "skipped" });
+  });
+
+  it("failed beats partial when a capability throws", async () => {
+    const caps: Capabilities = { mute() {}, escalate() { throw new Error("boom"); } };
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message -> mute reporter for 1 day; escalate to owner")], capabilities: caps, quotaPerHour: 10 });
+    const [rec] = await ex.handle({ id: "e", type: "message", at: 0, fields: {} });
+    expect(rec!.outcome).toBe("failed");
+  });
+});
+
+describe("capabilities are own-properties only", () => {
+  it("an inherited capability is undeclared: preflight fails and nothing executes", async () => {
+    const fired: string[] = [];
+    const caps = Object.create({ mute: () => void fired.push("mute") }) as Capabilities;
+    caps.escalate = () => void fired.push("escalate");
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message -> escalate to owner; mute author for 1 day")], capabilities: caps, quotaPerHour: 10 });
+    await expect(ex.handle({ id: "e", type: "message", at: 0, fields: { author: "bob" } })).rejects.toBeInstanceOf(UndeclaredCapabilityError);
+    expect(fired).toEqual([]);
+    expect(ex.records.at(-1)).toMatchObject({ outcome: "failed", actions: [{ status: "skipped" }, { kind: "mute", status: "failed", reason: expect.stringContaining("undeclared") }] });
+  });
+
+  it("an inherited capability is undeclared even when it is the only action", async () => {
+    const fired: string[] = [];
+    const caps = Object.create({ mute: () => void fired.push("mute") }) as Capabilities;
+    const ex = createExecutor({ curses: [parseCurse("curse p: when message -> mute author for 1 day")], capabilities: caps, quotaPerHour: 10 });
+    await expect(ex.handle({ id: "e", type: "message", at: 0, fields: { author: "bob" } })).rejects.toThrow(/did not declare/);
+    expect(fired).toEqual([]);
+  });
+});
+
+describe("count history is bounded", () => {
+  const counter = (n: number, window: string) =>
+    parseCurse(`curse c: when message where count(message by same author flagged) >= ${n} within ${window} -> post "hit" to ops`);
+
+  it("keeps exact (at - window, at] semantics while pruning older events", async () => {
+    const { calls, caps } = stub();
+    const ex = createExecutor({ curses: [counter(3, "1 hour")], capabilities: caps, quotaPerHour: 1000 });
+    const H = 3_600_000;
+    // Filler far in the past forces pruning; the boundary event at exactly (at - window) must NOT count.
+    for (let i = 0; i < 3000; i++) await ex.handle(msg(`old${i}`, i, "zed"));
+    const base = 10 * H;
+    await ex.handle(msg("b0", base, "amy"));
+    await ex.handle(msg("b1", base + 1000, "amy"));
+    const [r] = await ex.handle(msg("b2", base + H, "amy")); // b0 is exactly at (at - window): excluded
+    expect(r!.conditions[0]!.observed).toBe(2);
+    expect(calls.filter((c) => String(c.req.eventId).startsWith("b"))).toEqual([]);
+    const [r2] = await ex.handle(msg("b3", base + H + 1, "amy")); // b1, b2, b3 in window
+    expect(r2!.conditions[0]!.observed).toBe(3);
+    expect(calls.filter((c) => String(c.req.eventId).startsWith("b"))).toHaveLength(1);
+  });
+
+  it("retains nothing when no installed curse has a count condition", async () => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [parseCurse('curse p: when message -> post "x" to ops')], capabilities: caps, quotaPerHour: 1_000_000 });
+    for (let i = 0; i < 500; i++) await ex.handle(msg(`m${i}`, i, "a"));
+    expect((ex as unknown as { retained: number }).retained).toBe(0);
+  });
+
+  it("drops events older than the largest window", async () => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [counter(2, "1 hour")], capabilities: caps, quotaPerHour: 1_000_000 });
+    for (let i = 0; i < 5000; i++) await ex.handle(msg(`m${i}`, i * 60_000, "a")); // one per minute
+    expect((ex as unknown as { retained: number }).retained).toBeLessThan(1500);
+  });
+
+  it("ingests 40,000 events quickly", async () => {
+    const { caps } = stub();
+    const ex = createExecutor({ curses: [counter(3, "7 days")], capabilities: caps, quotaPerHour: 1_000_000 });
+    const t0 = performance.now();
+    for (let i = 0; i < 40_000; i++) await ex.handle(msg(`m${i}`, i * 1000, `u${i % 50}`, i % 3 === 0));
+    expect(ex.records.length).toBe(40_000);
+    expect(performance.now() - t0).toBeLessThan(5000);
   });
 });

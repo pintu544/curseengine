@@ -173,3 +173,25 @@ describe("install after messages", () => {
     expect((await small.receive(msg("b", "mira", T0 + 1000, false, "hi"))).decisions[0]!.outcome).toBe("skipped-quota");
   });
 });
+
+describe("monotonic host clock", () => {
+  it("never rewinds on a backdated message and anchors mutes to the monotonic clock", async () => {
+    await host.receive(msg("q1", "mira", T0 + 5000, true));
+    await host.receive(msg("q2", "mira", T0 + 6000, true));
+    expect(host.chat.now).toBe(T0 + 6000);
+
+    const back = await host.receive(msg("q3", "mira", T0 + 1000, true)); // backdated
+    expect(host.chat.now).toBe(T0 + 6000); // clock did not rewind
+    expect(back.message.at).toBe(T0 + 6000); // treated as arriving now
+    // The backdated event is counted at the clock (T0+6000), as the third strike, not at T0+1000.
+    expect(back.decisions[0]!.at).toBe(T0 + 6000);
+    expect(back.decisions[0]!.outcome).toBe("executed");
+    expect(back.chat.mutes).toHaveLength(1);
+    expect(back.chat.mutes[0]).toMatchObject({ author: "mira", since: T0 + 6000, until: T0 + 6000 + DAY });
+
+    const later = await host.receive(msg("q4", "mira", T0 + 7000, true));
+    expect(host.chat.now).toBe(T0 + 7000);
+    expect(later.message.muted).toBe(true);
+    expect(later.chat.mutes).toHaveLength(1);
+  });
+});

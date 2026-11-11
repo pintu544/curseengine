@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "description": "Automations you can read. Curses you can undo.",
   "license": "MIT",
-  "packageManager": "pnpm@12.18.0",
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "pnpm -r --if-present test",

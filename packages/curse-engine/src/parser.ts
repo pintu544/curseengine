@@ -11,6 +11,9 @@ const RESERVED = new Set([
   "contains", "matches", "mute", "post", "email", "escalate",
 ]);
 
+/** Largest accepted duration amount per unit. */
+const MAX_DURATION_AMOUNT = 10_000;
+
 const UNITS: Record<string, DurationUnit> = {
   minute: "minute", minutes: "minute",
   hour: "hour", hours: "hour",
@@ -189,7 +192,9 @@ class Parser {
   private parseDuration(what: string): Duration {
     const n = this.expectNumber(what);
     const amount = Number(n.text);
+    if (!Number.isInteger(amount)) this.fail(n, `a duration must be a whole number of at least 1 (got ${n.text})`);
     if (!(amount > 0)) this.fail(n, "a duration must be greater than zero");
+    if (amount > MAX_DURATION_AMOUNT) this.fail(n, `a duration may not exceed ${MAX_DURATION_AMOUNT} per unit (got ${n.text})`);
     const u = this.cur;
     const unit = u.kind === "word" ? UNITS[u.text] : undefined;
     if (!unit) this.unexpected("a time unit (minutes, hours, days or weeks)");

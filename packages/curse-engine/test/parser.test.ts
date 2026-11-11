@@ -109,6 +109,11 @@ describe("parser: malformed curses give correct line errors", () => {
     { name: "text condition without string", src: "curse a: when message where body contains spam -> escalate to owner", line: 1, message: /quoted string/ },
     { name: "missing trigger", src: "curse a: mute author for 1 day", line: 1, message: /trigger/ },
     { name: "zero duration", src: "curse a: when message -> mute author for 0 days", line: 1, message: /greater than zero/ },
+    { name: "fractional duration (days)", src: "curse a: when message\n-> mute author for 1.5 days", line: 2, message: /whole number.*1\.5/ },
+    { name: "fractional duration (hours)", src: "curse a: when message\n-> mute author for 0.5 hours", line: 2, message: /whole number.*0\.5/ },
+    { name: "fractional count window", src: "curse a: when message where count(message) >= 3 within 1.5 days -> escalate to owner", line: 1, message: /whole number/ },
+    { name: "fractional every interval", src: "curse a:\n every 2.5 hours -> escalate to owner", line: 2, message: /whole number/ },
+    { name: "absurd duration magnitude", src: "curse a: when message\n-> mute author for 10001 days", line: 2, message: /may not exceed 10000/ },
     { name: "bad character on line 2", src: "curse a: when message\n-> mute author for 1 day; @", line: 2, message: /unexpected character "@"/ },
     { name: "empty source", src: "  \n ", line: 1, message: /empty source/ },
     { name: "must start with curse", src: "when message -> escalate to owner", line: 1, message: /"curse"/ },
@@ -125,4 +130,12 @@ describe("parser: malformed curses give correct line errors", () => {
       expect(() => parseCurse(c.src)).toThrow(new RegExp(`^line ${c.line}: `));
     });
   }
+});
+
+describe("duration bounds", () => {
+  it("accepts whole numbers up to 10000 per unit", () => {
+    const c = parseCurse("curse a: when message -> mute author for 10000 weeks");
+    expect(c.actions[0]).toMatchObject({ duration: { amount: 10000, unit: "week" } });
+    expect(parseCurse("curse a: when message -> mute author for 1 minute").actions[0]).toMatchObject({ duration: { amount: 1, unit: "minute" } });
+  });
 });

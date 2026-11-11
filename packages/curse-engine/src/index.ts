@@ -3,7 +3,7 @@ export { CurseSyntaxError } from "./errors.js";
 export { tokenize, type Token, type TokenKind } from "./tokenizer.js";
 export { parseCurse, tryParseCurse, type ParseResult } from "./parser.js";
 export {
-  createExecutor, Executor, UndeclaredCapabilityError, durationMs,
+  createExecutor, Executor, UndeclaredCapabilityError, durationMs, hasCapability, catastrophicShape, MATCH_SUBJECT_CAP,
   type Capabilities, type CapabilityName, type EngineEvent, type ExecutorOptions,
   type DecisionRecord, type ConditionRecord, type ActionRecord,
 } from "./executor.js";
