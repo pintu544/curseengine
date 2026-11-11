@@ -1,0 +1,3 @@
+curse prize-patrol: when message where text contains "prize" -> email winner-note to author
+curse daily-digest: every 1 days -> post "daily digest time" to general
+curse spam-hammer: when message where text contains "spam" -> escalate to owner

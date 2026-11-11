@@ -32,6 +32,10 @@ I did not use the IDE or CLI for this project, and Crew/Bots did not fit a solo,
 
 I did not define custom agents in the build itself. (Slice 4 adds one late, `grimoire-auditor`: a read-only auditor with no write or shell tools. Specified in Session 1 in `.kiro/specs/grimoire-auditor-agent/`, implemented in Session 2 as `.kiro/agents/grimoire-auditor.md`; see "Slice 4, Session 2" below.) The specialisation in this build lives in **steering and specs**, not agent personas: one general Kiro agent, constrained by two always-on steering files and a frozen grammar, produced more predictable results than a hand-rolled parser agent or reviewer agent would have. The reviewing role was deliberately kept *outside* the build agent — each slice was adversarially reviewed independently, and the findings (2 critical, 12 warnings across three QA passes) went back in as spec amendments. A builder grading its own homework was exactly the failure mode I wanted to avoid.
 
+**Update, CLI run 2026-11-11 (agent invoked by name).** `grimoire-auditor` was run **by name** on Kiro CLI V3, loaded from `.kiro/agents/grimoire-auditor.md`, under the owner's Kiro Pro account. This closes the by-name gap left by the Session 2 stand-in. Against the seeded negative fixture (now `fixtures/auditor-negative/`) it caught **3/3 planted defects** (undeclared `email`, `every` in a non-tick host, `escalate` with no inverse), with 0 false negatives and 0 fixture false positives. It also found one unplanted real defect: `daily-digest` used `#general`, which the tokenizer cannot lex, so the curse was a parse error; it is fixed (`general`). It also audited `packs/standup` (warnings only; no shipped host can run the pack) and the two apps (0 blockers, 5 warnings). The verbatim report and scoring are in `docs/audits/grimoire-auditor-cli-2026-11-11.md`. Caveat: one run, one small fixture — 3/3 is a measured result on that fixture, not a general recall claim.
+
+Context7 was consulted for the current custom-agent configuration docs (the `tools`, `permissions`, `resources`, `includeMcpJson`, `includePowers` fields and whether `tools: ["read"]` covers grep/glob-style search), but the lookup **did not happen**: see the MCP section (answer 6). The `read`-covers-search question therefore remains **unverified**; the fields in the agent file are not re-confirmed or corrected by Context7. The agent did successfully read and search the repo in this run, which is behavioural evidence it could do so, but it is not documentation.
+
 ### 3. Agent hooks — what they automated
 
 Three hooks live in `.kiro/hooks/`, each in both IDE and Web formats:
@@ -70,6 +74,14 @@ Honest answer: **no MCP servers were used in the Kiro sessions.** The stack (Typ
 - Direct egress to the endpoint was refused: `curl: (7) CONNECT tunnel failed, response 403` for `https://mcp.context7.com/mcp`.
 
 So no failure is credited to MCP. The persistence work was written from the existing code patterns and pinned by tests; the one place a docs lookup would plausibly have helped (what `pg-mem` supports) was instead settled by running the tests, which found that pg-mem has no advisory locks (shimmed in tests only) and cannot re-create a dropped table or roll back DDL (the tests assert only what the emulator can show). The only external documentation read in that session was Kiro's own [MCP configuration](https://kiro.dev/docs/mcp/configuration/) and [custom-agent configuration reference](https://kiro.dev/docs/custom-agents/configuration-reference/) pages, fetched as plain web pages, which is not Context7. Enabling the server in the Kiro Web settings UI was not possible from inside the sandbox session.
+
+**Update, CLI run 2026-11-11 (Context7 reachable as a tool, but rejected the key).** In this session the Context7 tools (`resolve-library-id`, `query-docs`) were loadable and callable through the MCP server configured in `.kiro/settings/mcp.json`, but every call failed with the same error. Three calls were made: `resolve-library-id` for "Kiro" (custom-agent configuration reference), `resolve-library-id` for "Kiro CLI", and `query-docs` with library id `/kirodotdev/kiro` (a guessed id, since resolution had failed; it is not known to exist). The exact error each time:
+
+```
+MCP tool error: Invalid API key. Please check your API key. API keys should start with 'ctx7sk' prefix.
+```
+
+So `CONTEXT7_API_KEY` was missing or invalid in this environment (this was not investigated further, and no key was entered). **No documentation was retrieved and nothing is claimed as confirmed or corrected by Context7.** Open questions that remain open: whether the fields in `.kiro/agents/grimoire-auditor.md` (`tools`, `permissions`, `resources`, `includeMcpJson`, `includePowers`) match the current docs, and whether `tools: ["read"]` covers grep/glob-style search. Next step for the owner: supply a valid `ctx7sk...` key as `CONTEXT7_API_KEY` and re-run the lookup.
 
 ### 7. Property-based testing — what it caught that unit tests missed
 
