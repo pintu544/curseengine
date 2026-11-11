@@ -38,12 +38,18 @@ export function Simulator({ curseId }: { curseId: string }) {
     <section aria-labelledby="sim-h" className="rounded border border-zinc-800 p-3 lg:col-span-2">
       <h2 id="sim-h" className="mb-1 font-semibold">Simulator</h2>
       <p className="mb-2 text-xs text-zinc-400">Replays one tick per fixture invoice through curse <span className="font-mono">{curseId}</span> with a recording stub. Nothing here touches the outbox or the invoices. Install the curse first.</p>
-      <button type="button" data-testid="run-sim" disabled={busy} onClick={() => void run()} className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50">Run simulation</button>
+      <button type="button" data-testid="run-sim" disabled={busy} onClick={() => void run()} className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50">Run simulation</button>
       {error && <div role="alert" className="mt-2 rounded bg-red-950 p-2 text-sm text-red-200">{error}</div>}
+      <div aria-live="polite" className="mt-3 empty:hidden">
+        {res && report && (
+          <>
+            <p data-testid="sim-summary" className="text-lg font-semibold">{res.summaryLine}</p>
+            <p className="text-xs text-zinc-400">{report.summary.events} ticks, {report.summary.matchedRuns} matched runs.</p>
+          </>
+        )}
+      </div>
       {res && report && (
-        <div className="mt-3">
-          <p data-testid="sim-summary" className="text-lg font-semibold">{res.summaryLine}</p>
-          <p className="text-xs text-zinc-400">{report.summary.events} ticks, {report.summary.matchedRuns} matched runs.</p>
+        <div>
           <h3 className="mt-3 text-sm font-semibold">Per target</h3>
           <ul data-testid="sim-targets" className="text-sm">
             {report.summary.perTarget.map((t) => <li key={`${t.kind}-${t.target}`} className="font-mono text-xs">{t.kind} {t.target} x{t.count}</li>)}

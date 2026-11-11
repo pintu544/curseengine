@@ -37,12 +37,13 @@ export function Grimoire({ version, onUndone }: { version: unknown; onUndone: ()
   return (
     <section aria-labelledby="grim-h" className="rounded border border-zinc-800 p-3 lg:col-span-2">
       <h2 id="grim-h" className="mb-1 font-semibold">Grimoire</h2>
-      <p data-testid="grimoire-note" className="mb-2 text-xs text-zinc-400">
+      <p data-testid="grimoire-note" aria-live="polite" className="mb-2 text-xs text-zinc-400">
         {data?.note ?? "Messages from a muted author produce no decision and no grimoire entry."}
         {data && data.suppressedTotal > 0 && <span data-testid="suppressed-count"> {data.suppressedTotal} suppressed while muted{data.suppressedTruncated ? ` (showing latest ${data.suppressed.length})` : ""}.</span>}
       </p>
-      <p className="mb-2 text-xs text-zinc-500">Entries are never edited or deleted while this host runs. A demo reset starts a new, empty log.</p>
+      <p className="mb-2 text-xs text-zinc-400">Entries are never edited or deleted while this host runs. A demo reset starts a new, empty log.</p>
       {error && <div role="alert" className="mb-2 rounded bg-red-950 p-2 text-sm text-red-200">{error}</div>}
+      <div aria-live="polite">
       {(data?.entries.length ?? 0) === 0 ? (
         <p className="text-sm text-zinc-400">No executed actions yet.</p>
       ) : (
@@ -58,6 +59,7 @@ export function Grimoire({ version, onUndone }: { version: unknown; onUndone: ()
           ))}
         </ol>
       )}
+      </div>
     </section>
   );
 }

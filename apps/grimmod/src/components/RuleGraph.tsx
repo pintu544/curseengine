@@ -19,7 +19,7 @@ export function RuleGraph({ graph }: { graph: Graph | null }) {
         return (
           <li key={n.id} className="list-none">
             {edge && (
-              <div className="ml-6 flex items-center gap-2 py-0.5 text-xs text-zinc-500" aria-hidden="true">
+              <div className="ml-6 flex items-center gap-2 py-0.5 text-xs text-zinc-400" aria-hidden="true">
                 <span>↓</span>
                 {edge.label && <span className="rounded bg-zinc-800 px-1.5 uppercase">{edge.label}</span>}
               </div>
