@@ -122,3 +122,21 @@ Two spec open questions were resolved as far as evidence allows (details in `des
 - **Not verified:** whether the `read` category includes grep and glob (the reference defers to a Built-in tools page that could not be fetched), and whether the Kiro Web surface loads the Markdown agent. No JSON twin was generated, since that would be an untested second source of truth.
 
 Not yet done: running the agent against a seeded negative fixture and `packs/standup` (spec task 4). No auditor findings are claimed here, including no claim about false negatives, until it has actually been run.
+
+### Step 2: the audit run (stand-in, not the custom agent)
+
+The brief asked for the `grimoire-auditor` agent to be invoked by name via sub-agent delegation. It could not be: the orchestrator session exposed only the generic coder, planner and semantic-reviewer sub-agents, with no delegation target for custom project agents. The audit was therefore run by the read-only semantic-reviewer sub-agent, given the agent file's exact system prompt, report format and pinned resources. **The report is the stand-in's output, not the custom agent's**, and the stand-in was not tool-restricted: it ran one `find`, which it disclosed. What was and was not exercised: the agent file's content and the audit method were used; its tool restriction and its resource loading by Kiro were not. The verbatim report and the orchestrator's verification notes are in `docs/audits/grimoire-auditor-2026-11-11.md`.
+
+**False positives.**
+- Standup: the auditor said the pack's test file did not exist and raised a capability warning on that basis. `packs/standup/test/standup.test.ts` exists, calls `simulate()` with `declared: ["post", "escalate"]` and asserts every action is `post` or `escalate`. Its file search missed it.
+- "Possible" undo-ordering gaps in both apps (an effect applied but no grimoire entry if `handle` throws): dismissed after reading the engine. `Executor.handle` throws only `UndeclaredCapabilityError`, which the hosts catch and record, and a throwing capability becomes a `failed` action record. No path skips the audit entry.
+
+**One genuine finding, fixed** (commit `fix(hosts): warn on install when a curse's trigger can never fire`). `POST /api/curses` in GrimMod and Deadbeat returned a plain 201 for curses that can never run: `every` in GrimMod (no ticks), and in Deadbeat any `every` interval other than 1 day, any `when` event, and `on webhook` (ticks are fixed at 1 day, no webhook intake). Both apps now return an additive `warnings: string[]` (always present, empty when none) from a small pure `installWarnings(curse)` helper in each app's `src/lib`. Installs are not refused. Deadbeat compares intervals in milliseconds with the engine's exported `durationMs`, so `every 24 hours` is accepted. No engine change. Tests: helper unit tests and route-level tests in both apps; the shipped fixture curses produce no warnings. `docs/grammar.md` is generated from `.kiro/specs/curse-engine/design.md` by the regen hook, so it was not hand-edited; its executor rule 1 already states the behaviour, and the new field is documented in each app's README.
+
+**Follow-ups left open (warnings, not inviolable breaches).**
+- GrimMod: live `receive` clamps the clock to the latest message time while the simulator feeds raw `at` values, so a backdated event can differ between simulation and live (not reachable through the HTTP API, which stamps `Date.now()`).
+- Both apps: executor count history (GrimMod) and quota usage (both) are not persisted across restarts, as the host doc comments say.
+- Deadbeat: the simulator runs over fixture invoices at the reference time with no sent-tier filter, so it answers "what would run on a fresh fixture", not "what would run live now".
+
+**False negatives:** none established. Without the seeded negative fixture (spec task 4, not built) there is no measurement of what the auditor misses on known-bad input, so no claim is made either way. The stand-in also read only part of each app (it did not read `persistence.ts`, the undo routes or the UI), which it disclosed.
+
