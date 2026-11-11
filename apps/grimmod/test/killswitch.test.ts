@@ -5,6 +5,10 @@ import { POST as undo } from "../app/api/grimoire/[id]/undo/route";
 import { POST as postEvent } from "../app/api/events/route";
 import { GET as health } from "../app/api/health/route";
 import { POST as reset } from "../app/api/reset/route";
+import { POST as postFixtures } from "../app/api/fixtures/route";
+import { POST as postSimulate } from "../app/api/curses/[id]/simulate/route";
+import { createChatAdapter } from "@/lib/adapter";
+import { ChatState } from "@/lib/chat-state";
 import { EXAMPLE_CURSE } from "@/lib/fixtures";
 import { engineEnabledFromEnv, EngineDisabledError, getHost } from "@/lib/host";
 
@@ -23,6 +27,7 @@ beforeEach(async () => {
   await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
 });
 afterEach(() => {
+  getHost().setEngineEnabled(undefined);
   delete process.env["CURSE_ENGINE_ENABLED"];
 });
 
@@ -85,5 +90,43 @@ describe("FR9 kill switch (GrimMod)", () => {
     expect(res.status).toBe(200);
     expect(host.grimoire.entries).toHaveLength(3);
     expect(host.grimoire.isReversed(entry.id)).toBe(true);
+  });
+
+  it("the override survives POST /api/reset and /api/fixtures: after a reset a raid burst still produces zero side effects", async () => {
+    getHost().setEngineEnabled(false);
+    for (const doReset of [() => reset(), () => postFixtures()]) {
+      expect((await doReset()).status).toBe(200);
+      const host = getHost();
+      expect(host.engineEnabled).toBe(false);
+      const before = JSON.stringify(host.chat.snapshot());
+      expect((await burst(5)).map((r) => r.status)).toEqual([503, 503, 503, 503, 503]);
+      expect(host.decisions).toHaveLength(0);
+      expect(host.grimoire.entries).toHaveLength(0);
+      expect(host.chat.mutes).toHaveLength(0);
+      expect(host.chat.escalations).toHaveLength(0);
+      expect(JSON.stringify(host.chat.snapshot())).toBe(before);
+    }
+    getHost().setEngineEnabled(undefined);
+    await reset();
+    expect(getHost().engineEnabled).toBe(true);
+  });
+
+  it("simulate while the engine is off still dry-runs and produces no side effects on live state", async () => {
+    const host = getHost();
+    host.setEngineEnabled(false);
+    const before = JSON.stringify(host.chat.snapshot());
+    const res = await postSimulate(post("/api/curses/x/simulate", {}), { params: Promise.resolve({ id: host.getCurses()[0]!.name }) });
+    expect(res.status).toBe(200);
+    expect((await res.json()).report).toBeDefined();
+    expect(JSON.stringify(host.chat.snapshot())).toBe(before);
+    expect(host.decisions).toHaveLength(0);
+    expect(host.grimoire.entries).toHaveLength(0);
+    expect(host.chat.mutes).toHaveLength(0);
+  });
+
+  it("the dry-run capability set is derived from the adapter, not hard-coded", () => {
+    const adapterKeys = Object.keys(createChatAdapter(new ChatState([]))).sort();
+    expect([...getHost().declaredCapabilities()].sort()).toEqual(adapterKeys);
+    expect(adapterKeys).toEqual(["escalate", "mute", "post"]);
   });
 });

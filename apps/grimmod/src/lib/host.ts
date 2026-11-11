@@ -1,31 +1,17 @@
-import { createExecutor, hasCapability, parseCurse, type AuditEntry, UndeclaredCapabilityError, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
+import { engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
+import { createExecutor, hasCapability, parseCurse, type AuditEntry, UndeclaredCapabilityError, type Capabilities, type CapabilityName, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
 import { createChatAdapter } from "./adapter";
 import { ChatState, type ChatSnapshot } from "./chat-state";
 import { EXAMPLE_CURSE, fixtureHistory, REFERENCE_NOW, type ChatMessage } from "./fixtures";
 import { chatInverse, createGrimoire, type GrimoireRepository } from "./grimoire";
+
+export { ENGINE_ENABLED_ENV, engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
 
 /**
  * Demo quota: curse runs allowed per curse per rolling hour. Set well above anything a
  * burst can reach (a burst is 5 messages) so the quota never hides the storyline.
  */
 export const DEMO_QUOTA_PER_HOUR = 1000;
-
-/** Name of the FR9 kill switch environment variable. `0`, `false` or `off` (any case) disables the engine. */
-export const ENGINE_ENABLED_ENV = "CURSE_ENGINE_ENABLED";
-
-/** Reads the kill switch from the environment: on unless explicitly set to 0, false or off. */
-export function engineEnabledFromEnv(env: Record<string, string | undefined> = process.env): boolean {
-  const v = env[ENGINE_ENABLED_ENV]?.trim().toLowerCase();
-  return !(v === "0" || v === "false" || v === "off");
-}
-
-/** Thrown by event intake while the FR9 kill switch is off. Nothing has been recorded or executed. */
-export class EngineDisabledError extends Error {
-  constructor() {
-    super(`The curse engine is disabled (kill switch: ${ENGINE_ENABLED_ENV}=off). No event was processed and no action was taken.`);
-    this.name = "EngineDisabledError";
-  }
-}
 
 export type IncomingMessage = Omit<ChatMessage, "muted" | "system">;
 
@@ -105,6 +91,16 @@ export class GrimModHost {
     this.engineOverride = enabled;
   }
 
+  /** The programmatic kill switch override (`undefined` follows the environment). Carried across demo resets. */
+  get engineOverrideValue(): boolean | undefined {
+    return this.engineOverride;
+  }
+
+  /** Capabilities the adapter declares, derived from the adapter itself (used for dry runs). */
+  declaredCapabilities(): CapabilityName[] {
+    return (Object.keys(this.capabilities) as CapabilityName[]).filter((k) => hasCapability(this.capabilities, k));
+  }
+
   getCurses(): Curse[] {
     return [...this.curses];
   }
@@ -173,7 +169,10 @@ export function getHost(): GrimModHost {
 
 export function resetHost(now?: number): GrimModHost {
   const g = globalThis as G;
+  const override = g[KEY]?.engineOverrideValue;
   g[KEY] = new GrimModHost(now);
+  // The kill switch is an operator control, so a demo reset must not silently switch the engine back on.
+  g[KEY].setEngineEnabled(override);
   g.__grimmodGraphs = new Map();
   return g[KEY];
 }

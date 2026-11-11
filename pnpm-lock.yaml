@@ -20,6 +20,9 @@ importers:
       '@curseengine/engine':
         specifier: workspace:*
         version: link:../../packages/curse-engine
+      '@curseengine/kill-switch':
+        specifier: workspace:*
+        version: link:../../packages/kill-switch
       next:
         specifier: ^16.4.6
         version: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -60,6 +63,9 @@ importers:
       '@curseengine/engine':
         specifier: workspace:*
         version: link:../../packages/curse-engine
+      '@curseengine/kill-switch':
+        specifier: workspace:*
+        version: link:../../packages/kill-switch
       next:
         specifier: ^16.4.6
         version: 16.4.6(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -100,6 +106,8 @@ importers:
       fast-check:
         specifier: ^4.10.2
         version: 4.10.2
+
+  packages/kill-switch: {}
 
   packs/standup:
     dependencies:

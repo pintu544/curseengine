@@ -1,6 +1,6 @@
 import { simulate, summaryLine, type EngineEvent } from "@curseengine/engine";
 import { DEFAULT_CHANNEL, DESIGNED_SPAMMERS, simulationHistory } from "@/lib/fixtures";
-import { curseStore, DEMO_QUOTA_PER_HOUR, toEngineEvent } from "@/lib/host";
+import { curseStore, DEMO_QUOTA_PER_HOUR, getHost, toEngineEvent } from "@/lib/host";
 import { json, readJson } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // Declared set mirrors the chat adapter (no email). A curse needing an undeclared capability (e.g. email) runs in
   // its own shadow executor and is refused at preflight: no quota consumed, identical refusal per event (see
   // "Refused curses" in the design spec). The report is built from a recording stub only.
-  const report = await simulate({ curses: [curse], events, quotaPerHour: DEMO_QUOTA_PER_HOUR, declared: ["mute", "post", "escalate"] });
+  const report = await simulate({ curses: [curse], events, quotaPerHour: DEMO_QUOTA_PER_HOUR, declared: getHost().declaredCapabilities() });
   const expected = custom ? undefined : DESIGNED_SPAMMERS;
   const falsePositives = expected ? report.summary.mutedTargets.filter((t) => !expected.includes(t)) : undefined;
   return json({

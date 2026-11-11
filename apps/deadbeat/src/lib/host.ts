@@ -1,34 +1,23 @@
-import { createExecutor, hasCapability, parseCurse, UndeclaredCapabilityError, type AuditEntry, type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
+import { engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
+import { createExecutor, hasCapability, parseCurse, UndeclaredCapabilityError, type AuditEntry, type Capabilities, type CapabilityName, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
 import { createMailAdapter } from "./adapter";
 import { DAY_MS, fixtureInvoices, REFERENCE_NOW, TIER_CURSES, type Invoice } from "./fixtures";
 import { createGrimoire, mailInverse, type GrimoireRepository } from "./grimoire";
 import { InvoiceState, type InvoiceSnapshot } from "./invoice-state";
 
+export { ENGINE_ENABLED_ENV, engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
+
 /** Demo quota: curse runs allowed per curse per rolling hour. Far above what a tick round reaches. */
 export const DEMO_QUOTA_PER_HOUR = 1000;
-
-/** Name of the FR9 kill switch environment variable. `0`, `false` or `off` (any case) disables the engine. */
-export const ENGINE_ENABLED_ENV = "CURSE_ENGINE_ENABLED";
-
-/** Reads the kill switch from the environment: on unless explicitly set to 0, false or off. */
-export function engineEnabledFromEnv(env: Record<string, string | undefined> = process.env): boolean {
-  const v = env[ENGINE_ENABLED_ENV]?.trim().toLowerCase();
-  return !(v === "0" || v === "false" || v === "off");
-}
-
-/** Thrown by tick intake while the FR9 kill switch is off. Nothing has been advanced, recorded or executed. */
-export class EngineDisabledError extends Error {
-  constructor() {
-    super(`The curse engine is disabled (kill switch: ${ENGINE_ENABLED_ENV}=off). No tick was processed and no email, escalation or grimoire entry was produced.`);
-    this.name = "EngineDisabledError";
-  }
-}
 
 /** Upper bound for one advance request, so a single call stays small. */
 export const MAX_ADVANCE_DAYS = 90;
 
 export interface TickResult extends InvoiceSnapshot {
+  /** Whole days actually applied. Less than requested only when `interrupted` is true. */
   days: number;
+  /** True when the kill switch was turned off part-way through a multi-day advance: the days after `days` were not applied. */
+  interrupted?: boolean;
   decisions: DecisionRecord[];
 }
 
@@ -105,6 +94,16 @@ export class DeadbeatHost {
     this.engineOverride = enabled;
   }
 
+  /** The programmatic kill switch override (`undefined` follows the environment). Carried across demo resets. */
+  get engineOverrideValue(): boolean | undefined {
+    return this.engineOverride;
+  }
+
+  /** Capabilities the adapter declares, derived from the adapter itself (used for dry runs). */
+  declaredCapabilities(): CapabilityName[] {
+    return (Object.keys(this.capabilities) as CapabilityName[]).filter((k) => hasCapability(this.capabilities, k));
+  }
+
   getCurses(): Curse[] {
     return [...this.curses];
   }
@@ -113,14 +112,22 @@ export class DeadbeatHost {
    * Advances the clock by `days` whole days (forward only). Each day increments every invoice's days_overdue and
    * emits one tick per invoice. `days` of 0 re-emits one round of ticks at the current clock (nothing already
    * sent is sent again).
+   *
+   * FR9: the kill switch is checked at the start of every day, before the clock, any invoice age, the outbox or the
+   * grimoire is touched. A day is therefore all-or-nothing. If the switch goes off part-way, the days already
+   * finished stay applied (each one complete), the remaining days are skipped and the result says `interrupted`.
+   * If it is off before the first day, `EngineDisabledError` is thrown and nothing has changed.
    */
   async advanceClock(days = 1): Promise<TickResult> {
     if (!Number.isInteger(days) || days < 0 || days > MAX_ADVANCE_DAYS) throw new RangeError(`days must be a whole number from 0 to ${MAX_ADVANCE_DAYS}.`);
-    // FR9 kill switch: refuse before the clock or any invoice moves.
-    if (!this.engineEnabled) throw new EngineDisabledError();
     const decisions: DecisionRecord[] = [];
     const rounds = Math.max(days, 1);
+    let done = 0;
     for (let d = 0; d < rounds; d++) {
+      if (!this.engineEnabled) {
+        if (done === 0) throw new EngineDisabledError();
+        return { ...this.state.snapshot(), days: days > 0 ? done : 0, interrupted: true, decisions };
+      }
       if (days > 0) {
         this.state.clock += DAY_MS;
         for (const inv of this.state.invoices) inv.daysOverdue += 1;
@@ -129,16 +136,17 @@ export class DeadbeatHost {
         this.tickSeq += 1;
         decisions.push(...(await this.intake(toTickEvent(inv, `tick-${String(this.tickSeq).padStart(6, "0")}-${inv.id}`, this.state.clock), inv)));
       }
+      done += 1;
     }
     return { ...this.state.snapshot(), days, decisions };
   }
 
   /**
-   * Single choke point for every event that reaches the executor. The FR9 kill switch is enforced here as well as in advanceClock.
+   * Single choke point for every event that reaches the executor. The FR9 kill switch is enforced per day in advanceClock,
+   * so a day is never split.
    * Runs the curses not yet sent for this invoice, records decisions, marks tiers sent and writes the grimoire.
    */
   private async intake(event: EngineEvent, invoice: Invoice): Promise<DecisionRecord[]> {
-    if (!this.engineEnabled) throw new EngineDisabledError();
     this.state.currentInvoiceId = invoice.id;
     const due = (c: Curse) => !this.state.hasSent(invoice.id, c.name);
     this.active.splice(0, this.active.length, ...this.usable.filter(due));
@@ -185,7 +193,10 @@ export function getHost(): DeadbeatHost {
 /** Demo reset: a new host at the reference clock with the fixture invoices and NO curses installed. */
 export function resetHost(now: number = REFERENCE_NOW): DeadbeatHost {
   const g = globalThis as G;
+  const override = g[KEY]?.engineOverrideValue;
   g[KEY] = new DeadbeatHost(now);
+  // The kill switch is an operator control, so a demo reset must not silently switch the engine back on.
+  g[KEY].setEngineEnabled(override);
   g.__deadbeatGraphs = new Map();
   return g[KEY];
 }
