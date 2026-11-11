@@ -6,6 +6,8 @@ A plain-language automation DSL in TypeScript. Write a rule (a *curse*) in a sma
 
 Kiroween 2026 · Skeleton Crew category · one engine, two apps and a rule-pack.
 
+**Live demos:** [GrimMod](https://curseengine-grimmod.azurewebsites.net) · [Deadbeat](https://curseengine-deadbeat.azurewebsites.net) — both persist state and grimoire in Postgres. How this was built with Kiro: [docs/KIRO-USAGE.md](docs/KIRO-USAGE.md).
+
 ```
 curse spam-strikes: when message where count(message by same author flagged) >= 3 within 7 days -> mute author for 1 day; escalate to owner
 ```
@@ -59,7 +61,7 @@ The engine package is untouched since the Slice 2 baseline. See `.kiro/specs/cur
 Both apps have one engine-enabled flag at the host boundary. Set `CURSE_ENGINE_ENABLED=off` (or `0` or `false`) and event intake returns **503** with a message naming the switch; no decisions, emails, mutes, escalations or grimoire entries are produced. Reading state and undoing earlier entries stay available, and `/api/health` reports `engineEnabled`. Turning it back on resumes normal behaviour. Proof: `apps/grimmod/test/killswitch.test.ts` and `apps/deadbeat/test/killswitch.test.ts`.
 
 ## Known limits and follow-ups
-Both apps are local, single-process demos with no authentication, no cap on memory growth and no bound on `matches` patterns. Nothing is sent anywhere: Deadbeat's mail adapter writes to an in-memory outbox only. Installing a curse keeps count history and quota state; `/api/reset` clears them. GrimMod emits no `tick` events, so `every` curses do not run there; Deadbeat is the tick host. A curse that uses an undeclared capability (such as `email` in GrimMod) records a failed decision on each event without blocking other curses. Full lists are in `apps/grimmod/README.md` and `apps/deadbeat/README.md`.
+Both apps are single-process demos with no authentication. `matches` patterns are validated (nested quantifiers are rejected) and match subjects are capped at 10,000 characters. Nothing is sent anywhere: Deadbeat's mail adapter writes to an in-app outbox only, never real email. When `DATABASE_URL` is set — as in the public demos — host state and the grimoire persist in Postgres and survive restarts (verified by a full stop/start of the deployed apps); without it, everything runs in memory. Installing a curse keeps count history and quota state; `/api/reset` clears them. GrimMod emits no `tick` events, so `every` curses do not run there; Deadbeat is the tick host. A curse that uses an undeclared capability (such as `email` in GrimMod) records a failed decision on each event without blocking other curses. Full lists are in `apps/grimmod/README.md` and `apps/deadbeat/README.md`.
 
 ## Inviolables
 No exfiltration · the simulator never executes side effects · every action is reversible. See `.kiro/steering/inviolables.md`.
