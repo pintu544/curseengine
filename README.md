@@ -12,6 +12,20 @@ Kiroween 2026 · Skeleton Crew category · one engine, two apps and a rule-pack.
 curse spam-strikes: when message where count(message by same author flagged) >= 3 within 7 days -> mute author for 1 day; escalate to owner
 ```
 
+![GrimMod: install the curse, a raid-bot burst fires it, the owner is escalated, and the mute is undone from the grimoire](docs/assets/hero.gif)
+
+*Install the curse → a raid-bot burst crosses the threshold → mute + owner escalation, recorded in the grimoire → one click undoes it. The full loop is reversible by design.*
+
+**Clone to first curse: ~1 minute 45 seconds** (measured 2026-11-11 on a 2-core VM with a cold package store: clone 2s, install 52s, one app build 49s, first curse answered in 26ms).
+
+## Anatomy
+
+![CurseEngine anatomy: owner, host apps, kill switch, sandboxed engine, grimoire, Postgres](docs/assets/anatomy.png)
+
+One engine, deliberately small surface: hosts own all side effects through declared adapter capabilities; the engine itself has no network, no environment and no clock. The simulator runs the *same* executor as the live runner — parity is property-tested over 1,500 generated cases with zero divergences, and the one counterexample the tests ever found was in the test model, not the engine (see [docs/KIRO-USAGE.md](docs/KIRO-USAGE.md)).
+
+![GrimMod simulator: 28 fixture events replayed, 3 muted, 0 false positives](docs/assets/simulator.png)
+
 ## Layout
 | Path | What |
 |---|---|
@@ -56,6 +70,8 @@ Two apps and one rule-pack run on one engine, with zero engine changes between t
 - **The standup pack** is scheduled, team-internal and informational, with new vocabulary (`standup` events), new rules and new actions (`post` and `escalate` only).
 
 The engine package is untouched since the Slice 2 baseline. See `.kiro/specs/curse-engine/tasks.md` for the plan.
+
+Since then, without engine changes: Postgres persistence gained versioned, advisory-locked migrations (`.kiro/specs/grimoire-persistence-hardening`); a read-only custom agent, `grimoire-auditor`, audits packs and hosts (`.kiro/agents/`, measured 3/3 on a seeded defect fixture — `docs/audits/`); hosts warn at install time when a curse's trigger can never fire there; both apps pass a WCAG 2.2 AA accessibility pass; and the repo ships a skills-only Kiro Power (`powers/curseengine/`) for authoring and auditing curses.
 
 ## FR9 kill switch
 Both apps have one engine-enabled flag at the host boundary. Set `CURSE_ENGINE_ENABLED=off` (or `0` or `false`) and event intake returns **503** with a message naming the switch; no decisions, emails, mutes, escalations or grimoire entries are produced. Reading state and undoing earlier entries stay available, and `/api/health` reports `engineEnabled`. Turning it back on resumes normal behaviour. Proof: `apps/grimmod/test/killswitch.test.ts` and `apps/deadbeat/test/killswitch.test.ts`.
