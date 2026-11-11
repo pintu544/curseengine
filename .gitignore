@@ -5,3 +5,5 @@ dist/
 .env*
 !.env.example
 # NOTE: /.kiro must NEVER be ignored (hackathon rule + project inviolable).
+*.tsbuildinfo
+next-env.d.ts

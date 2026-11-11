@@ -1,0 +1,46 @@
+import { UndeclaredCapabilityError } from "@curseengine/engine";
+import { DEFAULT_CHANNEL } from "@/lib/fixtures";
+import { getHost } from "@/lib/host";
+import { json, readJson } from "@/lib/http";
+
+export const dynamic = "force-dynamic";
+
+let counter = 0;
+
+/** GET /api/events: current chat state (messages, mutes, escalations) and the latest decision. */
+export async function GET(): Promise<Response> {
+  const host = getHost();
+  return json({ chat: host.chat.snapshot(), curses: host.getCurses().map((c) => c.name), latest: host.decisions.at(-1) ?? null });
+}
+
+/**
+ * POST /api/events {author, text, flagged?, channel?}: a chat message arrives, becomes an
+ * engine event and is fed to the executor. Returns the decision records and the chat state.
+ */
+export async function POST(req: Request): Promise<Response> {
+  const body = await readJson(req);
+  const author = body?.["author"];
+  const text = body?.["text"];
+  if (typeof author !== "string" || !author.trim() || typeof text !== "string" || !text.trim()) {
+    return json({ message: 'Body must include non-empty string "author" and "text".' }, 400);
+  }
+  const host = getHost();
+  const last = host.chat.messages.at(-1)?.at ?? 0;
+  counter += 1;
+  const msg = {
+    id: `live-${Date.now()}-${counter}`,
+    author: author.trim(),
+    channel: typeof body?.["channel"] === "string" && body["channel"] ? body["channel"] : DEFAULT_CHANNEL,
+    text: text.trim(),
+    at: Math.max(Date.now(), last + 1),
+    flagged: body?.["flagged"] === true,
+  };
+  try {
+    return json(await host.receive(msg));
+  } catch (err) {
+    if (err instanceof UndeclaredCapabilityError) {
+      return json({ message: err.message, decisions: [err.record], chat: host.chat.snapshot() }, 422);
+    }
+    throw err;
+  }
+}

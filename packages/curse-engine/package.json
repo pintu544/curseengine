@@ -10,6 +10,6 @@
   "scripts": {
     "test": "vitest --run",
     "typecheck": "tsc --noEmit",
-    "docs:grammar": "echo 'grammar docs generator lands with the rule-graph inspector (T1.5); hook is wired.'"
+    "docs:grammar": "node scripts/gen-grammar-docs.mjs"
   }
 }

@@ -14,7 +14,7 @@ curse spam-strikes: when message where count(message by same author flagged) >= 
 | Path | What |
 |---|---|
 | `packages/curse-engine` | The skeleton: tokenizer, parser, (later) executor, simulator, audit log. Zero UI. |
-| `apps/grimmod` | Chat-moderation demo (placeholder until T1.5) |
+| `apps/grimmod` | Chat-moderation demo: Next.js + Tailwind shell with a live executor host (T1.5) |
 | `apps/deadbeat` | Invoice-chasing demo (placeholder until Slice 3) |
 | `.kiro/` | Specs, steering (three inviolables), hooks |
 
@@ -28,12 +28,19 @@ const r = tryParseCurse(source);            // {ok:true, curse} | {ok:false, err
 ## Develop
 ```
 pnpm install
-pnpm test        # engine test suite (Vitest)
+pnpm test        # engine + GrimMod suites (Vitest)
 pnpm typecheck
+
+# GrimMod, the chat-moderation demo
+pnpm --filter @curseengine/grimmod build
+pnpm --filter @curseengine/grimmod start   # http://localhost:3000
+# or: pnpm --filter @curseengine/grimmod dev
 ```
 
+In GrimMod, install the curse above, then press **Raid-bot burst**: the bot is muted live on its third flagged message and the escalation lands in the owner inbox.
+
 ## Status
-Slice 1 in progress: scaffold (T1.1) and parser (T1.3) done. Executor, GrimMod UI, simulator, grimoire and Deadbeat follow — see `.kiro/specs/curse-engine/tasks.md`.
+Slice 1 in progress: scaffold (T1.1), parser (T1.3), executor (T1.4) and the GrimMod shell (T1.5) done. Simulator, grimoire and Deadbeat follow — see `.kiro/specs/curse-engine/tasks.md`.
 
 ## Inviolables
 No exfiltration · the simulator never executes side effects · every action is reversible. See `.kiro/steering/inviolables.md`.

@@ -5,7 +5,7 @@
 - [x] T1.2 Kiro credit request filed (done before this session).
 - [x] T1.3 Tokenizer + recursive-descent parser, typed AST, line-level errors — see `../curse-parser/`. _Requirements: FR1_
 - [x] T1.4 Sandboxed executor (event matching, conditions, adapter capability interface, hourly quota; no eval/Function). _FR3_
-- [ ] T1.5 GrimMod shell (demo chat, editor, rule-graph inspector). _FR2, FR7_
+- [x] T1.5 GrimMod shell (demo chat, editor, rule-graph inspector). _FR2, FR7_
 - [ ] T1.6 Slice 1 adversarial QA + fixes + summary.
 
 ## Slice 2 — Simulator + grimoire

@@ -6,4 +6,4 @@
 | Hook | Trigger | Action |
 |---|---|---|
 | run-tests-on-spec-edit | save `.kiro/specs/**/*.md` | `pnpm test` |
-| regen-grammar-docs | save parser/ast/tokenizer | `pnpm --filter @curseengine/engine run docs:grammar` (generator placeholder until T1.5) |
+| regen-grammar-docs | save parser/ast/tokenizer | `pnpm --filter @curseengine/engine run docs:grammar` (writes `docs/grammar.md` from the design spec) |

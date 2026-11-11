@@ -7,7 +7,7 @@
   "packageManager": "pnpm@12.18.0",
   "engines": { "node": ">=20" },
   "scripts": {
-    "test": "pnpm --filter @curseengine/engine test",
+    "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"
   },
   "devDependencies": {
