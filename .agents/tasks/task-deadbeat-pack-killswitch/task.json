@@ -1,11 +1,18 @@
 {
   "task_id": "task-deadbeat-pack-killswitch",
   "task_description": "Slice 3 part 1: Deadbeat app, standup rule-pack, FR9 kill switch in both apps, README update; engine untouched",
-  "status": "in_progress",
+  "status": "completed",
   "feature_order": [
     "FEAT-001",
     "FEAT-002",
     "FEAT-003"
   ],
-  "blocked_reason": null
+  "blocked_reason": null,
+  "verification": {
+    "build": "pass",
+    "tests": "pass",
+    "test_quality": "pass",
+    "docker_build": "skipped",
+    "summary": "Clean frozen install, 156 tests (118 baseline), typecheck clean, deadbeat build ok, engine diff empty; review v1 APPROVED with 5 non-blocking notes."
+  }
 }
