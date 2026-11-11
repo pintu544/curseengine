@@ -53,3 +53,24 @@ While it is off, `POST /api/events` returns **503** (`host.receive` throws `Engi
 - **Untested:** UI components, quota through the host, and the escalate-without-source fallback.
 - Demo quota is 1000 runs per curse per hour (`DEMO_QUOTA_PER_HOUR`), far above what a burst reaches.
 - Every effect is an in-memory record, so it is reversible and nothing leaves the process.
+
+## Persistence (Azure Database for PostgreSQL)
+
+Selected by environment. With `DATABASE_URL` **unset** (the default, and what the tests use) all state lives in memory exactly as before. With it **set**, state is saved to PostgreSQL after every change and restored on boot. The connection string is read only from the environment and is never logged or returned by the API. Azure needs TLS, so use a URL ending in `?sslmode=require`.
+
+**Shape** (created idempotently on every boot with `CREATE ... IF NOT EXISTS`; code in `src/lib/persistence.ts`, wiring in `src/lib/runtime.ts`):
+
+| Table | Purpose |
+| --- | --- |
+| `grimmod_state` | One row (`id = 'host'`) holding a JSONB snapshot: chat messages, mutes, escalations, host clock, installed curses, decisions (newest 500), the suppressed-while-muted list and the kill-switch override. Also holds the current grimoire `epoch`. Updated in place. |
+| `grimmod_grimoire` | Append-only, primary key `(epoch, seq)`, one JSONB entry per row. The app only ever runs `INSERT`. An undo is a new row (a reversal entry); no entry is updated or deleted. |
+
+The snapshot and any new grimoire rows are written in one transaction. On boot the grimoire is replayed through the engine's own audit log API, which must reproduce the stored ids exactly or persistence is reported as down.
+
+**What a reset means.** `POST /api/reset` and `POST /api/fixtures` start a new grimoire epoch: the visible grimoire becomes empty and the snapshot is replaced, while older epochs stay in the table as history. Wiping the database yourself (dropping the two tables, or deleting the `grimmod_state` row) gives a clean start at the next boot.
+
+**Not persisted:** the executor's rolling count history and quota usage. After a restart, counts toward a burst begin again from zero. Only one app instance should write to a database (the in-process state is the working copy).
+
+**If the database is unreachable.** The app still boots and serves. `GET /api/health` stays HTTP 200 and adds `persistence: { mode: "postgres", status, error? }`, where `status` is `ok`, `degraded` (a write failed; requests still work from memory and the next good write catches up) or `down` (could not connect or load at boot; running in memory, re-tried at most every 15 seconds until something changes in memory, after which a restart is needed). `error` is a short code such as `ECONNREFUSED`, never the connection string. With `DATABASE_URL` unset the health body has no `persistence` field.
+
+**How it is tested.** `test/persistence.test.ts` uses pg-mem, an in-process PostgreSQL emulator, through the same `pg` Pool interface. It is a substitute, not a real server, so it shows the SQL and restart logic work against that emulator only. The unreachable-database test uses the real `pg` driver against a closed local port.

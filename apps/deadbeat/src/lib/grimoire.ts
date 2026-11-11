@@ -2,10 +2,24 @@ import { AuditLog, type AuditEntry, type Inverse } from "@curseengine/engine";
 import type { InvoiceState } from "./invoice-state";
 
 /**
- * Repository interface for the grimoire. Kept in memory (the engine AuditLog); a database implementation could
- * replace it later without touching callers. Append-only within a host's lifetime: no update or delete.
+ * Repository interface for the grimoire. Kept in memory (the engine AuditLog); the Postgres store (src/lib/persistence.ts) now persists it append-only and
+ * replays it on boot, behind the same interface. Append-only within a host's lifetime: no update or delete.
  */
 export type GrimoireRepository = Pick<AuditLog, "entries" | "get" | "isReversed" | "record" | "recordDecision" | "reverse">;
+
+/**
+ * Rebuilds a grimoire from stored entries (oldest first) by replaying them through the engine's own append-only API:
+ * originals are recorded, reversals are re-appended with a no-op inverse (the effect is already part of the restored
+ * state). Throws if the replay does not reproduce the stored ids, which would mean the stored history is inconsistent.
+ */
+export function replayEntries(log: GrimoireRepository, stored: readonly AuditEntry[]): void {
+  for (const e of [...stored].sort((a, b) => a.seq - b.seq)) {
+    const made = e.reversalOf !== undefined
+      ? log.reverse(e.reversalOf, { [e.kind]: () => undefined } as Inverse, e.at)
+      : log.record({ curse: e.curse, eventId: e.eventId, eventSummary: e.eventSummary, path: e.path, kind: e.kind, target: e.target, at: e.at, ...(e.ref !== undefined ? { ref: e.ref } : {}) });
+    if (made.id !== e.id || made.seq !== e.seq) throw new Error(`Stored grimoire entry ${e.id} does not replay cleanly.`);
+  }
+}
 
 export const createGrimoire = (): GrimoireRepository => new AuditLog();
 

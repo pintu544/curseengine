@@ -55,3 +55,24 @@ While it is off, `POST /api/events` returns **503** (`host.advanceClock` throws 
 - Simulation uses one tick per invoice at the reference clock, so it is a "what would run now" snapshot, not a multi-day replay.
 - Single process, in-memory state on `globalThis`. No authentication: local demo only, do not expose it.
 - `DeadbeatHost.intake` is the single point where events reach the executor; the FR9 kill switch is enforced there and at the start of `advanceClock`.
+
+## Persistence (Azure Database for PostgreSQL)
+
+Selected by environment. With `DATABASE_URL` **unset** (the default, and what the tests use) all state lives in memory exactly as before. With it **set**, state is saved to PostgreSQL after every change and restored on boot. The connection string is read only from the environment and is never logged or returned by the API. Azure needs TLS, so use a URL ending in `?sslmode=require`.
+
+**Shape** (created idempotently on every boot with `CREATE ... IF NOT EXISTS`; code in `src/lib/persistence.ts`, wiring in `src/lib/runtime.ts`):
+
+| Table | Purpose |
+| --- | --- |
+| `deadbeat_state` | One row (`id = 'host'`) holding a JSONB snapshot: invoices, the host clock, outbox, escalations, sent-tier tracking, the tick counter, installed curses, decisions (newest 500) and the kill-switch override. Also holds the current grimoire `epoch`. Updated in place. |
+| `deadbeat_grimoire` | Append-only, primary key `(epoch, seq)`, one JSONB entry per row. The app only ever runs `INSERT`. An undo is a new row (a reversal entry; the outbox message is only marked retracted in the snapshot); no entry is updated or deleted. |
+
+The snapshot and any new grimoire rows are written in one transaction. On boot the grimoire is replayed through the engine's own audit log API, which must reproduce the stored ids exactly or persistence is reported as down.
+
+**What a reset means.** `POST /api/reset` and `POST /api/fixtures` start a new grimoire epoch: the visible grimoire becomes empty and the snapshot is replaced, while older epochs stay in the table as history. Wiping the database yourself (dropping the two tables, or deleting the `deadbeat_state` row) gives a clean start at the next boot.
+
+**Not persisted:** the executor's quota usage (sent tiers are persisted, so a tier is never re-sent after a restart). Only one app instance should write to a database (the in-process state is the working copy).
+
+**If the database is unreachable.** The app still boots and serves. `GET /api/health` stays HTTP 200 and adds `persistence: { mode: "postgres", status, error? }`, where `status` is `ok`, `degraded` (a write failed; requests still work from memory and the next good write catches up) or `down` (could not connect or load at boot; running in memory, re-tried at most every 15 seconds until something changes in memory, after which a restart is needed). `error` is a short code such as `ECONNREFUSED`, never the connection string. With `DATABASE_URL` unset the health body has no `persistence` field.
+
+**How it is tested.** `test/persistence.test.ts` uses pg-mem, an in-process PostgreSQL emulator, through the same `pg` Pool interface. It is a substitute, not a real server, so it shows the SQL and restart logic work against that emulator only. The unreachable-database test uses the real `pg` driver against a closed local port.

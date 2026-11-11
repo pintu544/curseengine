@@ -1,5 +1,5 @@
 import { AlreadyReversedError, NotReversibleError, UnknownEntryError } from "@curseengine/engine";
-import { getHost } from "@/lib/host";
+import { getHostReady, persistHost } from "@/lib/runtime";
 import { json } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 /** POST /api/grimoire/:id/undo: 200 {reversal, state} | 404 unknown entry | 409 already reversed or not reversible. */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
   const { id } = await ctx.params;
-  const host = getHost();
+  const host = await getHostReady();
   try {
     const reversal = host.undo(id);
+    await persistHost(host);
     return json({ reversal, state: host.state.snapshot() });
   } catch (err) {
     if (err instanceof UnknownEntryError) return json({ message: err.message }, 404);

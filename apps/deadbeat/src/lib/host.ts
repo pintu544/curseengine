@@ -2,8 +2,8 @@ import { engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-swi
 import { createExecutor, hasCapability, parseCurse, UndeclaredCapabilityError, type AuditEntry, type Capabilities, type CapabilityName, type Curse, type DecisionRecord, type EngineEvent, type Executor } from "@curseengine/engine";
 import { createMailAdapter } from "./adapter";
 import { DAY_MS, fixtureInvoices, REFERENCE_NOW, TIER_CURSES, type Invoice } from "./fixtures";
-import { createGrimoire, mailInverse, type GrimoireRepository } from "./grimoire";
-import { InvoiceState, type InvoiceSnapshot } from "./invoice-state";
+import { createGrimoire, mailInverse, replayEntries, type GrimoireRepository } from "./grimoire";
+import { InvoiceState, type Escalation, type InvoiceSnapshot, type OutboxEntry } from "./invoice-state";
 
 export { ENGINE_ENABLED_ENV, engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
 
@@ -36,6 +36,25 @@ export function toTickEvent(invoice: Invoice, id: string, at: number): EngineEve
       amount: invoice.amount,
     },
   };
+}
+
+/** Most decision records kept in a persisted snapshot (the newest). The grimoire itself is never truncated. */
+export const MAX_PERSISTED_DECISIONS = 500;
+
+/** JSON-safe host state written to Postgres. The grimoire is stored separately (append-only). */
+export interface DeadbeatSnapshot {
+  v: 1;
+  clock: number;
+  invoices: Invoice[];
+  outbox: OutboxEntry[];
+  escalations: Escalation[];
+  /** Sent-tier tracking as [invoiceId, curse] pairs. */
+  sent: [string, string][];
+  tickSeq: number;
+  curses: Curse[];
+  decisions: DecisionRecord[];
+  /** Kill-switch override: null means "follow the environment". */
+  engineOverride: boolean | null;
 }
 
 /**
@@ -173,6 +192,37 @@ export class DeadbeatHost {
     }
     this.pendingRefs = [];
     return decisions;
+  }
+
+  /** State to persist (everything except the grimoire). Deep-copied through JSON so later edits cannot leak in. */
+  snapshotState(): DeadbeatSnapshot {
+    const snap: DeadbeatSnapshot = {
+      v: 1,
+      clock: this.state.clock,
+      invoices: this.state.invoices,
+      outbox: this.state.outbox,
+      escalations: this.state.escalations,
+      sent: this.state.sentPairs(),
+      tickSeq: this.tickSeq,
+      curses: this.curses,
+      decisions: this.decisions.slice(-MAX_PERSISTED_DECISIONS),
+      engineOverride: this.engineOverride ?? null,
+    };
+    return JSON.parse(JSON.stringify(snap)) as DeadbeatSnapshot;
+  }
+
+  /** Restores persisted state into a fresh host. Executor quota usage is not persisted; sent tiers are. */
+  restoreState(snap: DeadbeatSnapshot, entries: readonly AuditEntry[]): void {
+    this.state.clock = snap.clock;
+    this.state.invoices = snap.invoices;
+    this.state.outbox = snap.outbox;
+    this.state.escalations = snap.escalations;
+    this.state.restoreSent(snap.sent);
+    this.tickSeq = snap.tickSeq;
+    for (const c of snap.curses) this.install(c);
+    this.decisions.push(...snap.decisions);
+    this.engineOverride = snap.engineOverride ?? undefined;
+    replayEntries(this.grimoire, entries);
   }
 
   /** One-click undo: runs the inverse, then appends a reversal entry referencing the original. */

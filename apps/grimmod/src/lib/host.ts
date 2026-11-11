@@ -3,7 +3,8 @@ import { createExecutor, hasCapability, parseCurse, type AuditEntry, UndeclaredC
 import { createChatAdapter } from "./adapter";
 import { ChatState, type ChatSnapshot } from "./chat-state";
 import { EXAMPLE_CURSE, fixtureHistory, REFERENCE_NOW, type ChatMessage } from "./fixtures";
-import { chatInverse, createGrimoire, type GrimoireRepository } from "./grimoire";
+import { chatInverse, createGrimoire, replayEntries, type GrimoireRepository } from "./grimoire";
+import type { Escalation, MuteEntry } from "./chat-state";
 
 export { ENGINE_ENABLED_ENV, engineEnabledFromEnv, EngineDisabledError } from "@curseengine/kill-switch";
 
@@ -27,6 +28,20 @@ export function toEngineEvent(m: Pick<ChatMessage, "id" | "author" | "channel" |
 }
 
 export interface SuppressedMessage { eventId: string; author: string; at: number }
+
+/** Most decision records kept in a persisted snapshot (the newest). The grimoire itself is never truncated. */
+export const MAX_PERSISTED_DECISIONS = 500;
+
+/** JSON-safe host state written to Postgres. The grimoire is stored separately (append-only). */
+export interface GrimmodSnapshot {
+  v: 1;
+  chat: { messages: ChatMessage[]; mutes: MuteEntry[]; escalations: Escalation[]; now: number };
+  curses: Curse[];
+  decisions: DecisionRecord[];
+  suppressed: SuppressedMessage[];
+  /** Kill-switch override: null means "follow the environment". */
+  engineOverride: boolean | null;
+}
 
 /** The app side of the engine: holds curses, feeds chat messages as events, applies actions to chat state. */
 export class GrimModHost {
@@ -150,6 +165,32 @@ export class GrimModHost {
     }
     this.pendingRefs = [];
     return { message: { ...stored }, decisions, chat: this.chat.snapshot() };
+  }
+
+  /** State to persist (everything except the grimoire). Deep-copied through JSON so later edits cannot leak in. */
+  snapshotState(): GrimmodSnapshot {
+    const snap: GrimmodSnapshot = {
+      v: 1,
+      chat: { ...this.chat.snapshot(), now: this.chat.now },
+      curses: this.curses,
+      decisions: this.decisions.slice(-MAX_PERSISTED_DECISIONS),
+      suppressed: this.suppressed,
+      engineOverride: this.engineOverride ?? null,
+    };
+    return JSON.parse(JSON.stringify(snap)) as GrimmodSnapshot;
+  }
+
+  /** Restores persisted state into a fresh host. Executor count history and quota usage are not persisted. */
+  restoreState(snap: GrimmodSnapshot, entries: readonly AuditEntry[]): void {
+    this.chat.messages = snap.chat.messages;
+    this.chat.mutes = snap.chat.mutes;
+    this.chat.escalations = snap.chat.escalations;
+    this.chat.now = snap.chat.now;
+    for (const c of snap.curses) this.install(c);
+    this.decisions.push(...snap.decisions);
+    this.suppressed.push(...snap.suppressed);
+    this.engineOverride = snap.engineOverride ?? undefined;
+    replayEntries(this.grimoire, entries);
   }
 
   /** One-click undo: runs the inverse, then appends a reversal entry referencing the original. */

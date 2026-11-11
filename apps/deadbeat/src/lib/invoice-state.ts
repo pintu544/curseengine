@@ -68,6 +68,16 @@ export class InvoiceState {
     this.sent.add(sentKey(invoiceId, curse));
   }
 
+  /** Sent-tier keys as stored pairs (for persistence). */
+  sentPairs(): [string, string][] {
+    return [...this.sent].map((k) => k.split("\u0000") as [string, string]);
+  }
+
+  restoreSent(pairs: readonly (readonly [string, string])[]): void {
+    this.sent.clear();
+    for (const [inv, curse] of pairs) this.markSent(inv, curse);
+  }
+
   addOutbox(e: OutboxEntry): void {
     this.outbox.push(e);
   }

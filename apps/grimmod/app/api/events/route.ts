@@ -1,5 +1,6 @@
 import { DEFAULT_CHANNEL } from "@/lib/fixtures";
-import { EngineDisabledError, getHost } from "@/lib/host";
+import { EngineDisabledError } from "@/lib/host";
+import { getHostReady, persistHost } from "@/lib/runtime";
 import { json, readJson } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ let counter = 0;
 
 /** GET /api/events: current chat state (messages, mutes, escalations) and the latest decision. */
 export async function GET(): Promise<Response> {
-  const host = getHost();
+  const host = await getHostReady();
   return json({ chat: host.chat.snapshot(), curses: host.getCurses().map((c) => c.name), latest: host.decisions.at(-1) ?? null });
 }
 
@@ -24,7 +25,7 @@ export async function POST(req: Request): Promise<Response> {
   if (typeof author !== "string" || !author.trim() || typeof text !== "string" || !text.trim()) {
     return json({ message: 'Body must include non-empty string "author" and "text".' }, 400);
   }
-  const host = getHost();
+  const host = await getHostReady();
   if (!host.engineEnabled) return json({ disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message: new EngineDisabledError().message }, 503);
   const last = host.chat.messages.at(-1)?.at ?? 0;
   counter += 1;
@@ -37,7 +38,9 @@ export async function POST(req: Request): Promise<Response> {
     flagged: body?.["flagged"] === true,
   };
   try {
-    return json(await host.receive(msg));
+    const result = await host.receive(msg);
+    await persistHost(host);
+    return json(result);
   } catch (err) {
     if (err instanceof EngineDisabledError) return json({ disabled: true, killSwitch: "CURSE_ENGINE_ENABLED", message: err.message }, 503);
     throw err;

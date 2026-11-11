@@ -1,4 +1,5 @@
-import { EngineDisabledError, getHost, MAX_ADVANCE_DAYS } from "@/lib/host";
+import { EngineDisabledError, MAX_ADVANCE_DAYS } from "@/lib/host";
+import { getHostReady, persistHost } from "@/lib/runtime";
 import { json } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ function disabled(): Response {
 
 /** GET /api/events: invoices, the clock, the outbox, escalations and the latest decision. */
 export async function GET(): Promise<Response> {
-  const host = getHost();
+  const host = await getHostReady();
   return json({ ...host.state.snapshot(), curses: host.getCurses().map((c) => c.name), latest: host.decisions.at(-1) ?? null });
 }
 
@@ -19,7 +20,8 @@ export async function GET(): Promise<Response> {
  * current day without duplicating anything). Emits one tick per invoice per day. 400 on bad input.
  */
 export async function POST(req: Request): Promise<Response> {
-  if (!getHost().engineEnabled) return disabled();
+  const host = await getHostReady();
+  if (!host.engineEnabled) return disabled();
   const text = await req.text();
   let days = 1;
   if (text.trim() !== "") {
@@ -33,7 +35,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
   try {
-    return json(await getHost().advanceClock(days));
+    const result = await host.advanceClock(days);
+    await persistHost(host);
+    return json(result);
   } catch (err) {
     if (err instanceof EngineDisabledError) return disabled();
     throw err;

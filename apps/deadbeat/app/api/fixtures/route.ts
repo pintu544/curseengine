@@ -1,5 +1,6 @@
 import { refreshFixtures } from "@/lib/host";
 import { json } from "@/lib/http";
+import { getHostReady, persistHost } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
  * and the response says so with `reset: true`.
  */
 export async function POST(): Promise<Response> {
+  await getHostReady();
   const host = refreshFixtures();
+  await persistHost(host, { rotate: true });
   return json({ reset: true, invoices: host.state.invoices.length, curses: host.getCurses().map((c) => c.name), state: host.state.snapshot() });
 }
