@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev --webpack -p 3001",
     "build": "next build --webpack",
-    "start": "next start -p 3001",
+    "start": "next start -p ${PORT:-8080}",
     "test": "vitest --run",
     "typecheck": "tsc --noEmit",
     "sim:fixtures": "vitest --run test/fixtures.test.ts test/simulate.test.ts test/grimoire.test.ts"
