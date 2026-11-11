@@ -1,6 +1,6 @@
 # Design — Grimoire auditor agent
 
-## File: `.kiro/agents/grimoire-auditor.md` (to be created next session)
+## File: `.kiro/agents/grimoire-auditor.md`
 
 Front matter (target shape):
 
@@ -67,7 +67,7 @@ Files read: ...
 
 The agent cannot be unit-tested like code, so the tasks pin it with checks that ARE mechanical: (a) a Vitest test that parses `.kiro/agents/grimoire-auditor.md` front matter (using a tiny hand-written parser or a regex over the `---` block, no new dependency) and asserts: `tools` is exactly `["read"]`, no `write`/`shell`/`web`/`*` anywhere, the deny rules for `fs_write`, `shell`, `web_fetch`, `web_search`, `mcp` exist, `resources` is exactly the two files, no `mcpServers`, no `hooks`; (b) all `resources` paths exist; (c) a seeded negative fixture pack (an `email` action in a GrimMod-style host, an `every` curse in GrimMod) that a manual run of the agent must flag, recorded in the usage doc. (a) and (b) belong in a root-level or `apps/grimmod` test that does not touch the engine.
 
-## Open questions (resolve before implementation)
+## Open questions (resolved in Session 2)
 
-- Whether `read` covers grep and glob in the target Kiro surface (the reference lists the `read` category; confirm in the Web agent config).
-- Whether the Kiro Web surface honours the Markdown agent format or needs the JSON twin (hooks needed both formats; see `.kiro/hooks/README.md`). If JSON is needed, generate it from the same front matter and add a drift test.
+- **Does `read` cover grep and glob?** NOT verified. Kiro's configuration reference (fetched in Session 2) lists `read` as a category tag and defers category membership to a separate "Built-in tools" page, which I could not retrieve (404 at the guessed URLs). Decision: keep `tools: ["read"]` as the spec says. It is read-only whatever it covers; the risk is only that the agent has fewer search tools than hoped, in which case it can still read files directly. To confirm, open Agent Config in the Kiro surface you use and inspect the tools the `read` category expands to.
+- **Markdown or JSON twin?** Verified from the same reference: an agent config "can be a JSON file or a Markdown file with YAML front matter", and the Markdown example lives at `.kiro/agents/<name>.md`. That page documents IDE 1.0 and CLI V3. NOT verified: whether the Kiro Web surface loads `.kiro/agents/*.md` (hooks needed both formats there). Decision: ship Markdown only, no JSON twin and no drift test, because inventing an unverified twin would add an untested second source of truth. If the owner finds Web ignores the Markdown agent, generate the JSON from the same front matter (system prompt into `prompt`) and add a drift test then.

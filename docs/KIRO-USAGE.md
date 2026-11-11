@@ -30,7 +30,7 @@ I did not use the IDE or CLI for this project, and Crew/Bots did not fit a solo,
 
 ### 2. Custom agents
 
-I did not define custom agents in the build itself. (Slice 4 Session 1 adds a *spec* for one, `grimoire-auditor-agent`: a read-only auditor with no write or shell tools, designed in `.kiro/specs/grimoire-auditor-agent/` and not yet implemented.) The specialisation in this build lives in **steering and specs**, not agent personas: one general Kiro agent, constrained by two always-on steering files and a frozen grammar, produced more predictable results than a hand-rolled parser agent or reviewer agent would have. The reviewing role was deliberately kept *outside* the build agent — each slice was adversarially reviewed independently, and the findings (2 critical, 12 warnings across three QA passes) went back in as spec amendments. A builder grading its own homework was exactly the failure mode I wanted to avoid.
+I did not define custom agents in the build itself. (Slice 4 adds one late, `grimoire-auditor`: a read-only auditor with no write or shell tools. Specified in Session 1 in `.kiro/specs/grimoire-auditor-agent/`, implemented in Session 2 as `.kiro/agents/grimoire-auditor.md`; see "Slice 4, Session 2" below.) The specialisation in this build lives in **steering and specs**, not agent personas: one general Kiro agent, constrained by two always-on steering files and a frozen grammar, produced more predictable results than a hand-rolled parser agent or reviewer agent would have. The reviewing role was deliberately kept *outside* the build agent — each slice was adversarially reviewed independently, and the findings (2 critical, 12 warnings across three QA passes) went back in as spec amendments. A builder grading its own homework was exactly the failure mode I wanted to avoid.
 
 ### 3. Agent hooks — what they automated
 
@@ -96,3 +96,29 @@ The total Kiro spend — about 50 credits of the 4,000-credit pack — is itself
 ## Slice 4, Session 1: specs, persistence hardening, MCP attempt
 
 Two new specs were written before any code, in the same three-file style: `.kiro/specs/grimoire-persistence-hardening/` (implemented in this session) and `.kiro/specs/grimoire-auditor-agent/` (spec only; implementation is the next session). The hardening covered both apps: a `<app>_meta` table with a numbered, idempotent boot migration under an advisory lock (`SCHEMA_TOO_NEW` and `SCHEMA_CORRUPT` refuse rather than rewrite); GrimMod's persisted `suppressed` list capped at the latest 200 with the exact total kept (Slice-3 QA warning W1); and `/api/health` gaining `persistence.schemaVersion`. Zero files under `packages/curse-engine` changed. The Context7 MCP outcome is in answer 6 above: configured, blocked, not used.
+
+## Slice 4, Session 2: Context7 re-check and the grimoire-auditor agent
+
+### Step 0: Context7 MCP check (state recorded, no use claimed)
+
+Checked first, before any other work. Observed state:
+
+- `.kiro/settings/mcp.json` exists with a `context7` server (`https://mcp.context7.com/mcp`, header `CONTEXT7_API_KEY=${CONTEXT7_API_KEY}`, an environment reference, never a literal).
+- The Context7 Power is installed. Activating it lists server `context7` with "(No tools available)". Calling `resolve-library-id` through the powers interface returned: `Tool 'resolve-library-id' does not exist on server 'power-context7-context7'.`
+- `CONTEXT7_API_KEY` is unset in the sandbox. A direct `curl` POST to `https://mcp.context7.com/mcp` returned HTTP code `000` (no connection, blocked) within a 10-second timeout. (Session 1 saw a 403 on the proxy CONNECT; both are egress refusals.)
+- The owner reported that Agent Config > Powers & MCP showed the Context7 Power installed with no API-key prompt and no MCP servers listed.
+
+Outcome: **no Context7 lookup was possible and none is claimed.** No key was requested or entered; supplying `CONTEXT7_API_KEY` is the owner's later step. The only external documentation read this session was Kiro's custom-agent configuration reference, fetched as a plain web page, which is not Context7.
+
+### Step 1: the grimoire-auditor custom agent
+
+`.kiro/agents/grimoire-auditor.md` (Markdown agent format) implements the Session 1 spec. It is read-only in two independent layers: `tools: ["read"]` omits write and shell, and `permissions.rules` allow only `fs_read` and explicitly deny `fs_write`, `shell`, `web_fetch`, `web_search` and `mcp`, so removing either layer alone does not make it writable. `includeMcpJson: false` and `includePowers: false` keep the Context7 server out of it; it defines no `mcpServers` and no `hooks`. Resources pin `.kiro/steering/inviolables.md` and `docs/grammar.md`. It audits four classes: undeclared capabilities, actions with no undo path, simulator/live divergence risk, and `every` curses in hosts that never emit ticks.
+
+Mechanical check: `apps/grimmod/test/auditor-agent.test.ts` (7 tests, run by `pnpm -r test`) parses the front matter with a small hand-written parser and asserts exact tools, the deny rules, exact resources and that they exist, and no `mcpServers`/`hooks`. A deliberate mutation (adding `shell` to tools) made it fail, then it was reverted.
+
+Two spec open questions were resolved as far as evidence allows (details in `design.md`):
+
+- **Verified:** Kiro's configuration reference documents Markdown agent files with YAML front matter at `.kiro/agents/<name>.md` for IDE 1.0 and CLI V3.
+- **Not verified:** whether the `read` category includes grep and glob (the reference defers to a Built-in tools page that could not be fetched), and whether the Kiro Web surface loads the Markdown agent. No JSON twin was generated, since that would be an untested second source of truth.
+
+Not yet done: running the agent against a seeded negative fixture and `packs/standup` (spec task 4). No auditor findings are claimed here, including no claim about false negatives, until it has actually been run.
