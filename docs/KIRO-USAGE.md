@@ -30,7 +30,7 @@ I did not use the IDE or CLI for this project, and Crew/Bots did not fit a solo,
 
 ### 2. Custom agents
 
-I did not define custom agents. The specialisation in this build lives in **steering and specs**, not agent personas: one general Kiro agent, constrained by two always-on steering files and a frozen grammar, produced more predictable results than a hand-rolled parser agent or reviewer agent would have. The reviewing role was deliberately kept *outside* the build agent — each slice was adversarially reviewed independently, and the findings (2 critical, 12 warnings across three QA passes) went back in as spec amendments. A builder grading its own homework was exactly the failure mode I wanted to avoid.
+I did not define custom agents in the build itself. (Slice 4 Session 1 adds a *spec* for one, `grimoire-auditor-agent`: a read-only auditor with no write or shell tools, designed in `.kiro/specs/grimoire-auditor-agent/` and not yet implemented.) The specialisation in this build lives in **steering and specs**, not agent personas: one general Kiro agent, constrained by two always-on steering files and a frozen grammar, produced more predictable results than a hand-rolled parser agent or reviewer agent would have. The reviewing role was deliberately kept *outside* the build agent — each slice was adversarially reviewed independently, and the findings (2 critical, 12 warnings across three QA passes) went back in as spec amendments. A builder grading its own homework was exactly the failure mode I wanted to avoid.
 
 ### 3. Agent hooks — what they automated
 
@@ -63,6 +63,14 @@ The biggest difference came from the **inviolables file**, because it converts t
 
 Honest answer: **no MCP servers were used in the Kiro sessions.** The stack (TypeScript, Next.js, Vitest, fast-check) is squarely inside the model's reliable knowledge, and the project's context problem was already solved by the spec pack and steering — the failure MCP usually fixes (hallucinated APIs, stale docs) never had room to appear, because the grammar and semantics were pinned in our own design docs before code existed. If I extend CurseEngine after the hackathon, the first MCP server I would add is a docs server for the Postgres driver and Next.js standalone output, because deploy-time behaviour — not language syntax — is where this build actually met surprises.
 
+**Update, Slice 4 Session 1 (Context7 MCP): configured and committed, but NOT used.** `.kiro/settings/mcp.json` now declares a `context7` server (`https://mcp.context7.com/mcp`) whose key is passed only as the environment reference `${CONTEXT7_API_KEY}` (never a literal). The plan was to consult Context7 for `pg` (node-postgres) and Next.js behaviour while hardening persistence. In that session's sandbox it could not be used, and I am not claiming any lookup happened. The exact blockers observed:
+
+- Kiro Power `context7` activated with `Server: context7 (No tools available)`; calling `resolve-library-id` returned `Tool 'resolve-library-id' does not exist on server 'power-context7-context7'.`
+- `CONTEXT7_API_KEY` was not set in the sandbox environment.
+- Direct egress to the endpoint was refused: `curl: (7) CONNECT tunnel failed, response 403` for `https://mcp.context7.com/mcp`.
+
+So no failure is credited to MCP. The persistence work was written from the existing code patterns and pinned by tests; the one place a docs lookup would plausibly have helped (what `pg-mem` supports) was instead settled by running the tests, which found that pg-mem has no advisory locks (shimmed in tests only) and cannot re-create a dropped table or roll back DDL (the tests assert only what the emulator can show). The only external documentation read in that session was Kiro's own [MCP configuration](https://kiro.dev/docs/mcp/configuration/) and [custom-agent configuration reference](https://kiro.dev/docs/custom-agents/configuration-reference/) pages, fetched as plain web pages, which is not Context7. Enabling the server in the Kiro Web settings UI was not possible from inside the sandbox session.
+
 ### 7. Property-based testing — what it caught that unit tests missed
 
 PBT (fast-check) is the centrepiece of the verification story, aimed at the three claims the whole product stands on:
@@ -84,3 +92,7 @@ I did not use Kiro Powers. The build's integrations were hooks and the repo's ow
 Grill → spec (2 specs, 6 documents) → approval → Kiro Web session per slice → pristine-clone verification (frozen install, full suite, typecheck, engine-diff check) → independent adversarial QA → spec amendments → fix session → re-verification. Three slices, three QA passes, zero engine changes after the Slice 2 baseline — the two apps and the standup pack were added without touching `packages/curse-engine`, which is the Skeleton Crew claim, and it is mechanically checkable in the git history (the Slice 3 and persistence diffs contain zero files under `packages/curse-engine`).
 
 The total Kiro spend — about 50 credits of the 4,000-credit pack — is itself a finding: with the spec carrying the decisions, the agent's job was execution, and execution is cheap. The expensive part of this build was deciding, in writing, exactly what the software should do.
+
+## Slice 4, Session 1: specs, persistence hardening, MCP attempt
+
+Two new specs were written before any code, in the same three-file style: `.kiro/specs/grimoire-persistence-hardening/` (implemented in this session) and `.kiro/specs/grimoire-auditor-agent/` (spec only; implementation is the next session). The hardening covered both apps: a `<app>_meta` table with a numbered, idempotent boot migration under an advisory lock (`SCHEMA_TOO_NEW` and `SCHEMA_CORRUPT` refuse rather than rewrite); GrimMod's persisted `suppressed` list capped at the latest 200 with the exact total kept (Slice-3 QA warning W1); and `/api/health` gaining `persistence.schemaVersion`. Zero files under `packages/curse-engine` changed. The Context7 MCP outcome is in answer 6 above: configured, blocked, not used.

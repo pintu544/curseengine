@@ -4,7 +4,7 @@ import { json } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-/** Most recent suppressed-while-muted entries returned; the host keeps its full record, the payload does not. */
+/** Most recent suppressed-while-muted entries returned; the host keeps a larger window (200) and the exact total. */
 const SUPPRESSED_LIMIT = 50;
 
 /**
@@ -13,7 +13,7 @@ const SUPPRESSED_LIMIT = 50;
  */
 export async function GET(): Promise<Response> {
   const host = await getHostReady();
-  const total = host.suppressed.length;
+  const total = host.suppressedTotal;
   return json({
     entries: viewOf(host.grimoire),
     suppressedTotal: total,

@@ -118,10 +118,12 @@ export async function persistHost(host: DeadbeatHost, opts: { rotate?: boolean }
 }
 
 /** Reported by /api/health. `undefined` when persistence is off, so the in-memory response is unchanged. */
-export function persistenceHealth(): { mode: "postgres"; status: PersistenceStatus; error?: string } | undefined {
+export function persistenceHealth(): { mode: "postgres"; status: PersistenceStatus; schemaVersion: number | null; error?: string } | undefined {
   if (!persistenceConfigured()) return undefined;
   const r = rt();
   const status: PersistenceStatus = r.hydrated && r.store ? r.store.status : "down";
   const error = r.hydrated && r.store ? r.store.lastError : r.lastError;
-  return { mode: "postgres", status, ...(error ? { error } : {}) };
+  // Unknown (null) until a boot migration has succeeded: a down or too-new database has no version we can vouch for.
+  const schemaVersion = r.hydrated && r.store ? r.store.schemaVersion : null;
+  return { mode: "postgres", status, schemaVersion, ...(error ? { error } : {}) };
 }

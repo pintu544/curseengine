@@ -32,13 +32,22 @@ export interface SuppressedMessage { eventId: string; author: string; at: number
 /** Most decision records kept in a persisted snapshot (the newest). The grimoire itself is never truncated. */
 export const MAX_PERSISTED_DECISIONS = 500;
 
+/**
+ * Most suppressed-while-muted entries retained (the newest), in memory and in a persisted snapshot. Older entries are
+ * dropped; the exact count is kept separately in `suppressedTotal` so it survives truncation and restarts.
+ */
+export const SUPPRESSED_PERSIST_LIMIT = 200;
+
 /** JSON-safe host state written to Postgres. The grimoire is stored separately (append-only). */
 export interface GrimmodSnapshot {
   v: 1;
   chat: { messages: ChatMessage[]; mutes: MuteEntry[]; escalations: Escalation[]; now: number };
   curses: Curse[];
   decisions: DecisionRecord[];
+  /** At most the latest SUPPRESSED_PERSIST_LIMIT entries. */
   suppressed: SuppressedMessage[];
+  /** Exact number ever suppressed since the last reset. Absent in snapshots written before the cap existed. */
+  suppressedTotal?: number;
   /** Kill-switch override: null means "follow the environment". */
   engineOverride: boolean | null;
 }
@@ -65,8 +74,12 @@ export class GrimModHost {
   readonly decisions: DecisionRecord[] = [];
   /** Audit log (grimoire): one entry per executed action, append-only. */
   readonly grimoire: GrimoireRepository = createGrimoire();
-  /** Messages that arrived while their author was muted: no decision, no grimoire entry. */
+  /**
+   * Messages that arrived while their author was muted: no decision, no grimoire entry. Holds only the latest
+   * SUPPRESSED_PERSIST_LIMIT; use `suppressedTotal` for the exact count.
+   */
   readonly suppressed: SuppressedMessage[] = [];
+  private suppressedCount = 0;
   private pendingRefs: string[] = [];
   /**
    * FR9 kill switch. When false, receive() refuses before touching chat state, the executor or the grimoire.
@@ -134,7 +147,7 @@ export class GrimModHost {
     const stored = this.chat.addMessage({ ...msg, at: this.chat.now });
     // A muted author's message is suppressed: shown as muted, never fed to the executor.
     if (stored.muted) {
-      this.suppressed.push({ eventId: stored.id, author: stored.author, at: stored.at });
+      this.recordSuppressed({ eventId: stored.id, author: stored.author, at: stored.at });
       return { message: { ...stored }, decisions: [], chat: this.chat.snapshot() };
     }
     const event = toEngineEvent(stored);
@@ -167,6 +180,17 @@ export class GrimModHost {
     return { message: { ...stored }, decisions, chat: this.chat.snapshot() };
   }
 
+  /** Exact number of messages suppressed while muted since the last reset (not limited by the retained window). */
+  get suppressedTotal(): number {
+    return this.suppressedCount;
+  }
+
+  private recordSuppressed(item: SuppressedMessage): void {
+    this.suppressed.push(item);
+    this.suppressedCount += 1;
+    if (this.suppressed.length > SUPPRESSED_PERSIST_LIMIT) this.suppressed.splice(0, this.suppressed.length - SUPPRESSED_PERSIST_LIMIT);
+  }
+
   /** State to persist (everything except the grimoire). Deep-copied through JSON so later edits cannot leak in. */
   snapshotState(): GrimmodSnapshot {
     const snap: GrimmodSnapshot = {
@@ -174,7 +198,8 @@ export class GrimModHost {
       chat: { ...this.chat.snapshot(), now: this.chat.now },
       curses: this.curses,
       decisions: this.decisions.slice(-MAX_PERSISTED_DECISIONS),
-      suppressed: this.suppressed,
+      suppressed: this.suppressed.slice(-SUPPRESSED_PERSIST_LIMIT),
+      suppressedTotal: this.suppressedCount,
       engineOverride: this.engineOverride ?? null,
     };
     return JSON.parse(JSON.stringify(snap)) as GrimmodSnapshot;
@@ -188,7 +213,10 @@ export class GrimModHost {
     this.chat.now = snap.chat.now;
     for (const c of snap.curses) this.install(c);
     this.decisions.push(...snap.decisions);
-    this.suppressed.push(...snap.suppressed);
+    const kept = snap.suppressed.slice(-SUPPRESSED_PERSIST_LIMIT);
+    this.suppressed.push(...kept);
+    // Snapshots from before the cap have no total: their list was complete, so its length is the total.
+    this.suppressedCount = Math.max(snap.suppressedTotal ?? snap.suppressed.length, kept.length);
     this.engineOverride = snap.engineOverride ?? undefined;
     replayEntries(this.grimoire, entries);
   }

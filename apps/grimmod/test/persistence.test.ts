@@ -3,7 +3,7 @@
  * (a test substitute) driven through the same pg Pool interface the app uses in production. Passing here shows the
  * SQL and the restart logic work against that emulator; it is not proof of behaviour on a real Postgres server.
  */
-import { newDb } from "pg-mem";
+import { DataType, newDb } from "pg-mem";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GET as getGrimoire } from "../app/api/grimoire/route";
 import { POST as undo } from "../app/api/grimoire/[id]/undo/route";
@@ -13,8 +13,9 @@ import { GET as getEvents, POST as postEvent } from "../app/api/events/route";
 import { GET as health } from "../app/api/health/route";
 import { POST as reset } from "../app/api/reset/route";
 import { EXAMPLE_CURSE } from "@/lib/fixtures";
+import { SUPPRESSED_PERSIST_LIMIT } from "@/lib/host";
 import { usePersistencePool } from "@/lib/runtime";
-import type { SqlPool } from "@/lib/persistence";
+import { LATEST_SCHEMA_VERSION, MIGRATIONS, migrate, type SqlPool } from "@/lib/persistence";
 
 const post = (url: string, body: unknown) =>
   new Request(`http://test${url}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -34,7 +35,12 @@ const restart = (p: SqlPool | null = pool) => {
 const freshPool = (): SqlPool => {
   // pg-mem's AST coverage check flags the column constraints of a CREATE TABLE IF NOT EXISTS that is a no-op on re-run,
   // which real Postgres accepts. It is switched off here so the idempotent re-run can be exercised at all.
-  const { Pool } = newDb({ noAstCoverageCheck: true }).adapters.createPg();
+  const db = newDb({ noAstCoverageCheck: true });
+  // pg-mem has no advisory locks. These shims let the migration's lock statement run; they cannot
+  // reproduce real lock contention, so the serialisation itself is covered by review of the SQL, not by this suite.
+  db.public.registerFunction({ name: "hashtext", args: [DataType.text], returns: DataType.integer, implementation: (t: string) => t.length });
+  db.public.registerFunction({ name: "pg_advisory_xact_lock", args: [DataType.integer], returns: DataType.bool, implementation: () => true });
+  const { Pool } = db.adapters.createPg();
   return new Pool() as unknown as SqlPool;
 };
 const rows = async (sql: string) => (await pool.query(sql)).rows;
@@ -90,16 +96,6 @@ describe("restart survival (pg-mem substitute)", () => {
     expect(free.message.muted).toBe(false);
   });
 
-  it("applies the schema idempotently on every boot", async () => {
-    await getEvents();
-    restart();
-    await getEvents();
-    restart();
-    await getEvents();
-    const tables = (await rows("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).map((r) => r["table_name"]);
-    expect(tables).toEqual(expect.arrayContaining(["grimmod_state", "grimmod_grimoire"]));
-  });
-
   it("is append-only: undo adds a row and leaves earlier rows byte-identical; reset starts a new epoch without deleting", async () => {
     await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
     await burst(3);
@@ -144,7 +140,7 @@ describe("boot resilience", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     const body = JSON.parse(text);
-    expect(body).toMatchObject({ ok: true, app: "grimmod", persistence: { mode: "postgres", status: "down", error: "ECONNREFUSED" } });
+    expect(body).toMatchObject({ ok: true, app: "grimmod", persistence: { mode: "postgres", status: "down", schemaVersion: null, error: "ECONNREFUSED" } });
     expect(text).not.toContain("s3cret");
 
     // The app keeps working from memory.
@@ -163,12 +159,12 @@ describe("boot resilience", () => {
     };
     restart(flaky);
     await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
-    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "ok" });
+    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "ok", schemaVersion: LATEST_SCHEMA_VERSION });
 
     broken = true;
     await burst(3);
     expect((await (await getEvents()).json()).chat.mutes).toHaveLength(1);
-    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "degraded", error: "ECONNRESET" });
+    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "degraded", schemaVersion: LATEST_SCHEMA_VERSION, error: "ECONNRESET" });
 
     broken = false;
     await postEvent(post("/api/events", { author: "someone", text: "hello" }));
@@ -176,5 +172,246 @@ describe("boot resilience", () => {
     expect(await rows("SELECT seq FROM grimmod_grimoire ORDER BY seq")).toHaveLength(2);
     restart(real);
     expect((await (await getEvents()).json()).chat.mutes).toHaveLength(1);
+  });
+});
+
+const APP_NAME = "grimmod";
+const versionRows = async () => rows(`SELECT name, value, updated_at FROM ${APP_NAME}_meta`);
+const userTables = async () =>
+  (await rows("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).map((r) => String(r["table_name"])).sort();
+
+describe("schema versioning (pg-mem substitute)", () => {
+  it("v1 is the current schema and the latest version is derived from the migration list", () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([1]);
+    expect(LATEST_SCHEMA_VERSION).toBe(1);
+  });
+
+  it("a fresh database converges on v1: all tables exist and the meta row says 1; health reports it", async () => {
+    const body = await (await health()).json();
+    expect(body.persistence).toEqual({ mode: "postgres", status: "ok", schemaVersion: 1 });
+    expect(await userTables()).toEqual([`${APP_NAME}_grimoire`, `${APP_NAME}_meta`, `${APP_NAME}_state`]);
+    const meta = await versionRows();
+    expect(meta).toHaveLength(1);
+    expect(meta[0]).toMatchObject({ name: "schema_version", value: "1" });
+  });
+
+  it("migrate() is idempotent: running it again returns the same version and changes nothing", async () => {
+    expect(await migrate(pool)).toBe(1);
+    const first = await versionRows();
+    expect(await migrate(pool)).toBe(1);
+    expect(await migrate(pool)).toBe(1);
+    expect(await versionRows()).toEqual(first); // same row, same updated_at: not even rewritten
+    expect(await userTables()).toHaveLength(3);
+  });
+
+  it("repeated app boots keep one meta row at v1 and keep serving", async () => {
+    for (let i = 0; i < 3; i++) {
+      restart();
+      expect((await (await health()).json()).persistence.schemaVersion).toBe(1);
+    }
+    expect(await versionRows()).toHaveLength(1);
+  });
+
+  it("runs inside one transaction that takes the per-app advisory lock first, then commits", async () => {
+    const seen: string[] = [];
+    const real = pool;
+    const spy: SqlPool = {
+      query: (t, v) => real.query(t, v),
+      connect: async () => {
+        const conn = await real.connect();
+        return { query: (t: string, v?: unknown[]) => { seen.push(t.trim().replace(/\s+/g, " ")); return conn.query(t, v); }, release: (e?: unknown) => conn.release(e) };
+      },
+    };
+    expect(await migrate(spy)).toBe(1);
+    expect(seen[0]).toBe("BEGIN");
+    expect(seen[1]).toBe(`SELECT pg_advisory_xact_lock(hashtext('${APP_NAME}_schema'))`);
+    expect(seen[seen.length - 1]).toBe("COMMIT");
+    expect(seen.filter((q) => q === "BEGIN" || q === "COMMIT")).toEqual(["BEGIN", "COMMIT"]);
+    // A second run takes the lock again and applies nothing: BEGIN, lock, meta DDL, read version, COMMIT.
+    seen.length = 0;
+    expect(await migrate(spy)).toBe(1);
+    expect(seen).toHaveLength(5);
+    expect(seen.some((q) => q.startsWith("INSERT"))).toBe(false);
+  });
+
+  it("adopts a database that predates versioning as v1 without touching its rows", async () => {
+    // Build the pre-versioning world: the v1 tables with data and NO meta table.
+    for (const sql of MIGRATIONS[0]!.statements) await pool.query(sql);
+    await pool.query(`INSERT INTO ${APP_NAME}_state (id, epoch, snapshot) VALUES ('other', 7, '{"keep":"me"}'::jsonb)`);
+    await pool.query(`INSERT INTO ${APP_NAME}_grimoire (epoch, seq, entry) VALUES (7, 1, '{"legacy":true}'::jsonb)`);
+    expect(await userTables()).not.toContain(`${APP_NAME}_meta`);
+    const stateBefore = await rows(`SELECT id, epoch, snapshot FROM ${APP_NAME}_state`);
+    const grimBefore = await rows(`SELECT epoch, seq, entry FROM ${APP_NAME}_grimoire`);
+
+    expect(await migrate(pool)).toBe(1);
+
+    expect((await versionRows())[0]).toMatchObject({ name: "schema_version", value: "1" });
+    expect(await rows(`SELECT id, epoch, snapshot FROM ${APP_NAME}_state`)).toEqual(stateBefore);
+    expect(await rows(`SELECT epoch, seq, entry FROM ${APP_NAME}_grimoire`)).toEqual(grimBefore);
+  });
+
+  it("a booted app whose version row is missing (an unversioned database) comes back at v1 with its state intact", async () => {
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    const before = await (await getEvents()).json();
+    await pool.query(`DELETE FROM ${APP_NAME}_meta`); // pg-mem cannot re-create a dropped table; an empty meta is the same "no version recorded" state
+    restart();
+    const body = await (await health()).json();
+    expect(body.persistence).toEqual({ mode: "postgres", status: "ok", schemaVersion: 1 });
+    expect((await (await getEvents()).json()).curses).toEqual(before.curses);
+  });
+
+  it("refuses a database written by a NEWER build: SCHEMA_TOO_NEW, schema untouched, app keeps serving from memory", async () => {
+    await migrate(pool);
+    await pool.query(`UPDATE ${APP_NAME}_meta SET value = '999' WHERE name = 'schema_version'`);
+    const tablesBefore = await userTables();
+    restart();
+    const res = await health();
+    expect(res.status).toBe(200);
+    expect((await res.json()).persistence).toEqual({ mode: "postgres", status: "down", schemaVersion: null, error: "SCHEMA_TOO_NEW" });
+    expect((await versionRows())[0]).toMatchObject({ value: "999" }); // not downgraded
+    expect(await userTables()).toEqual(tablesBefore);
+    expect((await postEvent(post("/api/events", { author: "someone", text: "hello" }))).status).toBe(200);
+  });
+
+  it.each(["abc", "-1", "1.5", ""])("reports SCHEMA_CORRUPT for an unreadable version %j and changes nothing", async (bad) => {
+    await migrate(pool);
+    await pool.query(`UPDATE ${APP_NAME}_meta SET value = '${bad}' WHERE name = 'schema_version'`);
+    restart();
+    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "down", schemaVersion: null, error: "SCHEMA_CORRUPT" });
+    expect((await versionRows())[0]).toMatchObject({ value: bad });
+  });
+
+  it("on a mid-migration failure it rolls back (never commits), records no version, and a later boot succeeds", async () => {
+    const real = pool;
+    const seen: string[] = [];
+    const failing: SqlPool = {
+      query: (t, v) => real.query(t, v),
+      connect: async () => {
+        const conn = await real.connect();
+        return {
+          query: (t: string, v?: unknown[]) => {
+            seen.push(t.trim().split(" ")[0]!);
+            return t.includes("INSERT INTO") && t.includes("_meta") ? Promise.reject(Object.assign(new Error("boom"), { code: "XX000" })) : conn.query(t, v);
+          },
+          release: (e?: unknown) => conn.release(e),
+        };
+      },
+    };
+    await expect(migrate(failing)).rejects.toMatchObject({ code: "XX000" });
+    expect(seen).toContain("ROLLBACK");
+    expect(seen).not.toContain("COMMIT");
+    // (Real Postgres also undoes the transactional DDL; pg-mem does not, so only the version row is asserted here.)
+    expect(await versionRows()).toEqual([]);
+    expect(await migrate(real)).toBe(1);
+    expect(await versionRows()).toHaveLength(1);
+  });
+});
+
+describe("health schemaVersion", () => {
+  it("in-memory mode (no DATABASE_URL, no pool) has no persistence object, so no schemaVersion", async () => {
+    usePersistencePool(null);
+    delete g["__grimmodPersistence"];
+    const body = await (await health()).json();
+    expect(body.ok).toBe(true);
+    expect(body).not.toHaveProperty("persistence");
+  });
+
+  it("postgres mode reports the recorded integer version", async () => {
+    const body = await (await health()).json();
+    expect(body.persistence.schemaVersion).toBe(LATEST_SCHEMA_VERSION);
+    expect(Number.isInteger(body.persistence.schemaVersion)).toBe(true);
+  });
+
+  it("postgres mode with an unreachable database reports null, still HTTP 200", async () => {
+    process.env["DATABASE_URL"] = "postgres://user:pw@127.0.0.1:1/nodb";
+    restart(null);
+    const res = await health();
+    expect(res.status).toBe(200);
+    expect((await res.json()).persistence).toMatchObject({ mode: "postgres", status: "down", schemaVersion: null });
+  });
+});
+
+describe("suppressed list cap (W1)", () => {
+  const snapshotRow = async () => (await rows("SELECT snapshot FROM grimmod_state WHERE id = 'host'"))[0]!["snapshot"] as { suppressed: { eventId: string }[]; suppressedTotal?: number; v: number };
+  /** Mutes raid-bot (3 flagged messages), then sends `n` more messages from the muted author: each one is suppressed. */
+  const suppressMany = async (n: number) => {
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    await burst(3);
+    for (let i = 0; i < n; i++) await postEvent(post("/api/events", { author: "raid-bot", text: `muted ${i}` }));
+  };
+
+  it("the cap is 200", () => {
+    expect(SUPPRESSED_PERSIST_LIMIT).toBe(200);
+  });
+
+  it("persists only the latest 200 suppressed entries but keeps the exact total, and the API still shows latest 50 + total after a restart", async () => {
+    await suppressMany(260);
+    const live = await (await getGrimoire()).json();
+    expect(live.suppressedTotal).toBe(260);
+    expect(live.suppressed).toHaveLength(50);
+    expect(live.suppressedTruncated).toBe(true);
+
+    const row = await snapshotRow();
+    expect(row.suppressed).toHaveLength(200);
+    expect(row.suppressedTotal).toBe(260);
+    expect(row.v).toBe(1); // snapshot format version is independent of the schema version
+    // The 200 kept are the NEWEST ones: the last kept is the last suppressed.
+    expect(row.suppressed.at(-1)!.eventId).toBe(live.suppressed.at(-1).eventId);
+
+    restart();
+    const after = await (await getGrimoire()).json();
+    expect(after).toEqual(live); // same total, same latest-50 window, same flag
+    const { getHost } = await import("@/lib/host");
+    expect(getHost().suppressed).toHaveLength(200);
+    expect(getHost().suppressedTotal).toBe(260);
+
+    // Counting continues from the preserved total, and the window keeps sliding.
+    await postEvent(post("/api/events", { author: "raid-bot", text: "one more" }));
+    const next = await (await getGrimoire()).json();
+    expect(next.suppressedTotal).toBe(261);
+    expect(getHost().suppressed).toHaveLength(200);
+  });
+
+  it("below the cap nothing is dropped and the numbers are exact", async () => {
+    await suppressMany(60);
+    const row = await snapshotRow();
+    expect(row.suppressed).toHaveLength(60);
+    expect(row.suppressedTotal).toBe(60);
+    restart();
+    const g2 = await (await getGrimoire()).json();
+    expect(g2).toMatchObject({ suppressedTotal: 60, suppressedTruncated: true });
+    expect(g2.suppressed).toHaveLength(50);
+  });
+
+  it("restores a snapshot written before the cap existed (no suppressedTotal): total defaults to the list length", async () => {
+    await suppressMany(5);
+    const row = await snapshotRow();
+    const { suppressedTotal: _drop, ...legacy } = row;
+    await pool.query("UPDATE grimmod_state SET snapshot = $1::jsonb WHERE id = 'host'", [JSON.stringify(legacy)]);
+    restart();
+    const g2 = await (await getGrimoire()).json();
+    expect(g2.suppressedTotal).toBe(5);
+    expect(g2.suppressed).toHaveLength(5);
+  });
+
+  it("restores an old UNBOUNDED snapshot (300 entries, no total): keeps the latest 200, total stays 300", async () => {
+    await suppressMany(1);
+    const row = await snapshotRow();
+    const big = Array.from({ length: 300 }, (_, i) => ({ eventId: `old-${i}`, author: "raid-bot", at: i }));
+    await pool.query("UPDATE grimmod_state SET snapshot = $1::jsonb WHERE id = 'host'", [JSON.stringify({ ...row, suppressed: big, suppressedTotal: undefined })]);
+    restart();
+    const g2 = await (await getGrimoire()).json();
+    expect(g2.suppressedTotal).toBe(300);
+    expect(g2.suppressed.at(-1).eventId).toBe("old-299");
+    const { getHost } = await import("@/lib/host");
+    expect(getHost().suppressed).toHaveLength(200);
+    expect(getHost().suppressed[0]!.eventId).toBe("old-100");
+  });
+
+  it("a demo reset clears the list and the total", async () => {
+    await suppressMany(10);
+    await reset();
+    expect((await (await getGrimoire()).json())).toMatchObject({ suppressedTotal: 0, suppressed: [] });
+    expect((await snapshotRow()).suppressedTotal).toBe(0);
   });
 });

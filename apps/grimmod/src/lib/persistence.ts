@@ -15,27 +15,96 @@ export interface SqlPool extends SqlConn {
 export type PersistenceStatus = "ok" | "degraded" | "down";
 
 /**
- * Idempotent schema, applied on every boot.
+ * Versioned schema. Tables:
+ *  - `${APP}_meta`: key/value bookkeeping; the row `schema_version` records the last migration applied.
  *  - `${APP}_state`: one JSONB snapshot row (id = 'host') plus the current grimoire `epoch`. Updated in place.
  *  - `${APP}_grimoire`: append-only. Rows are only ever INSERTed (reversals are new rows). A demo reset starts a new
  *    `epoch` rather than deleting anything.
+ * Migration v1 is the state and grimoire tables. Every statement is idempotent, so a database that predates
+ * versioning is adopted as v1 by the same code path that builds a fresh one.
  */
-export const SCHEMA_SQL: readonly string[] = [
-  `CREATE TABLE IF NOT EXISTS ${APP}_state (
-     id text PRIMARY KEY,
-     epoch integer NOT NULL,
-     snapshot jsonb NOT NULL,
-     updated_at timestamptz NOT NULL DEFAULT now()
-   )`,
-  `CREATE TABLE IF NOT EXISTS ${APP}_grimoire (
-     epoch integer NOT NULL,
-     seq integer NOT NULL,
-     entry jsonb NOT NULL,
-     created_at timestamptz NOT NULL DEFAULT now(),
-     PRIMARY KEY (epoch, seq)
-   )`,
-  `CREATE INDEX IF NOT EXISTS ${APP}_grimoire_created_idx ON ${APP}_grimoire (created_at)`,
+export interface Migration {
+  version: number;
+  description: string;
+  statements: readonly string[];
+}
+
+export const MIGRATIONS: readonly Migration[] = [
+  {
+    version: 1,
+    description: "snapshot and append-only grimoire tables",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ${APP}_state (
+         id text PRIMARY KEY,
+         epoch integer NOT NULL,
+         snapshot jsonb NOT NULL,
+         updated_at timestamptz NOT NULL DEFAULT now()
+       )`,
+      `CREATE TABLE IF NOT EXISTS ${APP}_grimoire (
+         epoch integer NOT NULL,
+         seq integer NOT NULL,
+         entry jsonb NOT NULL,
+         created_at timestamptz NOT NULL DEFAULT now(),
+         PRIMARY KEY (epoch, seq)
+       )`,
+      `CREATE INDEX IF NOT EXISTS ${APP}_grimoire_created_idx ON ${APP}_grimoire (created_at)`,
+    ],
+  },
 ];
+
+/** The newest schema version this build knows. Derived from the list so it can never drift from it. */
+export const LATEST_SCHEMA_VERSION: number = MIGRATIONS[MIGRATIONS.length - 1]!.version;
+
+const META_SQL = `CREATE TABLE IF NOT EXISTS ${APP}_meta (
+  name text PRIMARY KEY,
+  value text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+)`;
+const LOCK_SQL = `SELECT pg_advisory_xact_lock(hashtext('${APP}_schema'))`;
+
+function coded(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Brings the database to LATEST_SCHEMA_VERSION and returns the version now recorded. Runs in ONE transaction, under a
+ * transaction-scoped advisory lock (concurrent boots queue up instead of interleaving DDL). Applying it again is a no-op.
+ * Throws `SCHEMA_TOO_NEW` (a newer build already migrated this database) or `SCHEMA_CORRUPT` (unreadable version)
+ * before touching any data table; any failure rolls everything back.
+ */
+export async function migrate(pool: SqlPool): Promise<number> {
+  const conn = await pool.connect();
+  try {
+    await conn.query("BEGIN");
+    await conn.query(LOCK_SQL);
+    await conn.query(META_SQL);
+    const found = await conn.query(`SELECT value FROM ${APP}_meta WHERE name = 'schema_version'`);
+    const raw = found.rows[0]?.["value"];
+    let current = 0;
+    if (raw !== undefined) {
+      if (typeof raw !== "string" || !/^\d+$/.test(raw)) throw coded("SCHEMA_CORRUPT", "schema_version is not a non-negative integer");
+      current = Number(raw);
+    }
+    if (current > LATEST_SCHEMA_VERSION) throw coded("SCHEMA_TOO_NEW", `database is at schema ${current}, this build knows ${LATEST_SCHEMA_VERSION}`);
+    for (const m of MIGRATIONS) {
+      if (m.version <= current) continue;
+      for (const sql of m.statements) await conn.query(sql);
+      await conn.query(
+        `INSERT INTO ${APP}_meta (name, value, updated_at) VALUES ('schema_version', $1, now())
+         ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+        [String(m.version)],
+      );
+      current = m.version;
+    }
+    await conn.query("COMMIT");
+    conn.release();
+    return current;
+  } catch (err) {
+    try { await conn.query("ROLLBACK"); } catch { /* connection is gone */ }
+    conn.release(err);
+    throw err;
+  }
+}
 
 export interface Loaded<Snap> {
   snapshot: Snap | null;
@@ -49,13 +118,15 @@ export class PgStore<Snap> {
   epoch = 1;
   /** Highest grimoire seq already inserted for the current epoch. */
   persistedSeq = 0;
+  /** Schema version recorded in the database by the last successful boot migration; null until one succeeds. */
+  schemaVersion: number | null = null;
   private tail: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly pool: SqlPool) {}
 
-  /** Applies the schema and reads the saved state. Throws when the database is unreachable. */
+  /** Migrates the schema to the latest version and reads the saved state. Throws when the database is unreachable. */
   async init(): Promise<Loaded<Snap>> {
-    for (const sql of SCHEMA_SQL) await this.pool.query(sql);
+    this.schemaVersion = await migrate(this.pool);
     const state = await this.pool.query(`SELECT epoch, snapshot FROM ${APP}_state WHERE id = 'host'`);
     const row = state.rows[0];
     if (!row) {
