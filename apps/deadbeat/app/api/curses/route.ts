@@ -3,10 +3,11 @@ import { curseToGraph } from "@/lib/graph";
 import { curseStore } from "@/lib/host";
 import { getHostReady, persistHost } from "@/lib/runtime";
 import { json, readJson } from "@/lib/http";
+import { installWarnings } from "@/lib/install-warnings";
 
 export const dynamic = "force-dynamic";
 
-/** POST /api/curses {source} -> 201 {id, graph} | 422 {line, message} */
+/** POST /api/curses {source} -> 201 {id, graph, warnings} | 422 {line, message} */
 export async function POST(req: Request): Promise<Response> {
   const body = await readJson(req);
   if (!body || typeof body["source"] !== "string") {
@@ -19,5 +20,5 @@ export async function POST(req: Request): Promise<Response> {
   const host = await getHostReady();
   host.install(result.curse);
   await persistHost(host);
-  return json({ id, graph: curseToGraph(result.curse) }, 201);
+  return json({ id, graph: curseToGraph(result.curse), warnings: installWarnings(result.curse) }, 201);
 }

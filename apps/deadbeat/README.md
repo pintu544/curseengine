@@ -31,7 +31,7 @@ Tick fields: `invoice_id`, `days_overdue`, `client` (the email address), `client
 ## API
 | Route | What |
 |---|---|
-| `POST /api/curses` | `{source}` -> 201 `{id, graph}` or 422 `{line, message}` |
+| `POST /api/curses` | `{source}` -> 201 `{id, graph, warnings}` or 422 `{line, message}`. `warnings` is always present; non-empty when the trigger can never fire here (anything but an interval equal to 1 day, a `when` event, or `on webhook`). The install is not refused. |
 | `GET /api/curses/:id/graph` | Rule graph, or 404 |
 | `POST /api/curses/:id/simulate` | Recording-stub run over one tick per fixture invoice; touches no live state |
 | `GET /api/events` | Invoices, clock, outbox, escalations, latest decision |

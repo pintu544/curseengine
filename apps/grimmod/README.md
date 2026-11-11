@@ -49,6 +49,7 @@ While it is off, `POST /api/events` returns **503** (`host.receive` throws `Engi
 - **Shared `chat.now`:** the adapter reads a mutable clock set per message. Pass the event time into the adapter before any capability becomes asynchronous.
 - **Decision history:** `GET /api/events` returns only the latest decision, so a reload loses the inspector history.
 - **Malformed bodies:** a non-JSON body to `POST /api/curses` returns 422 with `line: 1`, which labels a transport error as a source error.
+- **Install warnings:** `POST /api/curses` returns 201 `{id, graph, warnings}`. `warnings` is always present and lists triggers that can never fire here (`every`, since GrimMod emits no ticks, and `on webhook`, since it has no webhook intake). The install is not refused.
 - **Replace-by-name:** reinstalling the same name replaces the curse and still returns 201.
 - **Untested:** UI components, quota through the host, and the escalate-without-source fallback.
 - Demo quota is 1000 runs per curse per hour (`DEMO_QUOTA_PER_HOUR`), far above what a burst reaches.
