@@ -69,6 +69,66 @@ describe("POST /api/events", () => {
   });
 });
 
+describe("failing curse over the API", () => {
+  it("answers 200 with a failed record, keeps it in the log, and still runs the good curse", async () => {
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    await postCurse(post("/api/curses", { source: "curse mailer: when message -> email welcome to author" }));
+    let last: any;
+    for (let i = 0; i < 3; i++) {
+      const res = await postEvent(post("/api/events", { author: "raid-bot", text: `spam ${i}`, flagged: true }));
+      expect(res.status).toBe(200);
+      last = await res.json();
+    }
+    expect(last.chat.mutes[0].author).toBe("raid-bot");
+    const failed = last.decisions.find((d: any) => d.curse === "mailer");
+    expect(failed.outcome).toBe("failed");
+    const state = await (await getEvents()).json();
+    expect(state.latest.outcome).toBeDefined();
+    expect(state.curses).toEqual(["spam-strikes", "mailer"]);
+  });
+});
+
+describe("state after a 422", () => {
+  it("leaves installed curses, history and chat untouched", async () => {
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    for (let i = 0; i < 2; i++) await postEvent(post("/api/events", { author: "raid-bot", text: `spam ${i}`, flagged: true }));
+    const before = await (await getEvents()).json();
+
+    const bad = await postCurse(post("/api/curses", { source: "curse spam-strikes:\n  when message\n  -> explode owner" }));
+    expect(bad.status).toBe(422);
+    const after = await (await getEvents()).json();
+    expect(after.curses).toEqual(["spam-strikes"]);
+    expect(after.chat).toEqual(before.chat);
+
+    const third = await (await postEvent(post("/api/events", { author: "raid-bot", text: "spam 2", flagged: true }))).json();
+    expect(third.decisions[0].outcome).toBe("executed");
+    expect(third.chat.mutes).toHaveLength(1);
+  });
+});
+
+describe("POST /api/reset", () => {
+  it("removes curses, mutes, escalations and history, and restores fixtures", async () => {
+    const fresh = await (await getEvents()).json();
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    for (let i = 0; i < 3; i++) await postEvent(post("/api/events", { author: "raid-bot", text: `spam ${i}`, flagged: true }));
+    expect((await (await getEvents()).json()).chat.mutes).toHaveLength(1);
+
+    const res = await reset();
+    expect(res.status).toBe(200);
+    const state = await (await getEvents()).json();
+    expect(state.curses).toEqual([]);
+    expect(state.latest).toBeNull();
+    expect(state.chat.mutes).toEqual([]);
+    expect(state.chat.escalations).toEqual([]);
+    expect(state.chat.messages.map((m: any) => m.id)).toEqual(fresh.chat.messages.map((m: any) => m.id));
+
+    // Count history is gone too: a reinstalled curse starts again from zero.
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    const first = await (await postEvent(post("/api/events", { author: "raid-bot", text: "again", flagged: true }))).json();
+    expect(first.decisions[0].conditions[0].observed).toBe(1);
+  });
+});
+
 describe("GET /api/health", () => {
   it("is ok", async () => {
     expect(await (await health()).json()).toEqual({ ok: true, app: "grimmod" });

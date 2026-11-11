@@ -1,4 +1,3 @@
-import { UndeclaredCapabilityError } from "@curseengine/engine";
 import { DEFAULT_CHANNEL } from "@/lib/fixtures";
 import { getHost } from "@/lib/host";
 import { json, readJson } from "@/lib/http";
@@ -16,6 +15,7 @@ export async function GET(): Promise<Response> {
 /**
  * POST /api/events {author, text, flagged?, channel?}: a chat message arrives, becomes an
  * engine event and is fed to the executor. Returns the decision records and the chat state.
+ * A curse whose action fails shows up as a "failed" decision record; the response is still 200.
  */
 export async function POST(req: Request): Promise<Response> {
   const body = await readJson(req);
@@ -35,12 +35,5 @@ export async function POST(req: Request): Promise<Response> {
     at: Math.max(Date.now(), last + 1),
     flagged: body?.["flagged"] === true,
   };
-  try {
-    return json(await host.receive(msg));
-  } catch (err) {
-    if (err instanceof UndeclaredCapabilityError) {
-      return json({ message: err.message, decisions: [err.record], chat: host.chat.snapshot() }, 422);
-    }
-    throw err;
-  }
+  return json(await host.receive(msg));
 }

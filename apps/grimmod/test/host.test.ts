@@ -104,14 +104,72 @@ describe("mute state in chat", () => {
 });
 
 describe("sandbox", () => {
-  it("refuses a curse that emails, because email is undeclared", async () => {
+  it("records a failed decision, instead of throwing, for a curse that emails", async () => {
     host.install(parseCurse("curse mailer: when message -> email welcome to author"));
-    await expect(host.receive(msg("m1", "mira", T0, false))).rejects.toThrow(/email/);
+    const r = await host.receive(msg("m1", "mira", T0, false));
+    const failed = r.decisions.find((d) => d.curse === "mailer")!;
+    expect(failed.outcome).toBe("failed");
+    expect(failed.actions[0]!.reason).toMatch(/undeclared capability "email"/);
+    expect(r.message.id).toBe("m1");
+  });
+
+  it("keeps the failed record in the decision log", async () => {
+    host.install(parseCurse("curse mailer: when message -> email welcome to author"));
+    await host.receive(msg("m1", "mira", T0, false));
+    expect(host.decisions.some((d) => d.curse === "mailer" && d.outcome === "failed" && d.eventId === "m1")).toBe(true);
+  });
+
+  it("still runs a good curse installed before and after the failing one", async () => {
+    host.install(parseCurse('curse before: when message where text contains "hi" -> post "one" to general'));
+    host.install(parseCurse("curse mailer: when message -> email welcome to author"));
+    host.install(parseCurse('curse after: when message where text contains "hi" -> post "two" to general'));
+    const r = await host.receive(msg("g1", "mira", T0, false, "hi there"));
+    expect(r.decisions.map((d) => `${d.curse}:${d.outcome}`).sort()).toEqual(["after:executed", "before:executed", "mailer:failed", "spam-strikes:no-match"]);
+    const posts = r.chat.messages.filter((m) => m.system).map((m) => m.text);
+    expect(posts).toEqual(expect.arrayContaining(["one", "two"]));
+  });
+
+  it("keeps muting through the burst while a failing curse is installed", async () => {
+    host.install(parseCurse("curse mailer: when message -> email welcome to author"));
+    for (const m of burstMessages(T0, 3)) await host.receive(m);
+    expect(host.chat.isMuted(RAID_BOT, T0 + 5000)).toBe(true);
+    expect(host.decisions.filter((d) => d.curse === "mailer" && d.outcome === "failed")).toHaveLength(3);
   });
 
   it("runs a post action against chat state", async () => {
     host.install(parseCurse('curse greeter: when message where text contains "hi" -> post "welcome" to general'));
     const r = await host.receive(msg("g1", "mira", T0, false, "hi there"));
     expect(r.chat.messages.some((m) => m.system && m.text === "welcome")).toBe(true);
+  });
+});
+
+describe("install after messages", () => {
+  it("keeps count history when another curse is installed", async () => {
+    await host.receive(msg("f1", RAID_BOT, T0, true));
+    await host.receive(msg("f2", RAID_BOT, T0 + 1000, true));
+    host.install(parseCurse('curse greeter: when message where text contains "hi" -> post "welcome" to general'));
+    const r = await host.receive(msg("f3", RAID_BOT, T0 + 2000, true));
+    const d = r.decisions.find((x) => x.curse === "spam-strikes")!;
+    expect(d.conditions[0]!.observed).toBe(3);
+    expect(d.outcome).toBe("executed");
+    expect(host.chat.isMuted(RAID_BOT, T0 + 3000)).toBe(true);
+  });
+
+  it("keeps count history when the same curse is replaced", async () => {
+    await host.receive(msg("f1", RAID_BOT, T0, true));
+    await host.receive(msg("f2", RAID_BOT, T0 + 1000, true));
+    host.install(parseCurse(EXAMPLE_CURSE));
+    expect(host.getCurses()).toHaveLength(1);
+    const r = await host.receive(msg("f3", RAID_BOT, T0 + 2000, true));
+    expect(r.decisions[0]!.outcome).toBe("executed");
+  });
+
+  it("keeps quota usage when a curse is replaced", async () => {
+    const small = new GrimModHost(T0, 1);
+    const src = 'curse greeter: when message where text contains "hi" -> post "welcome" to general';
+    small.install(parseCurse(src));
+    expect((await small.receive(msg("a", "mira", T0, false, "hi"))).decisions[0]!.outcome).toBe("executed");
+    small.install(parseCurse(src));
+    expect((await small.receive(msg("b", "mira", T0 + 1000, false, "hi"))).decisions[0]!.outcome).toBe("skipped-quota");
   });
 });

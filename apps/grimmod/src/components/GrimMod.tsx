@@ -32,17 +32,21 @@ export function GrimMod() {
     void fetch("/api/events").then((r) => r.json()).then((d: { chat: ChatSnapshot; latest: DecisionRecord | null }) => {
       setChat(d.chat);
       setLatest(d.latest);
-    });
+    }).catch(() => undefined);
   }, []);
 
   const install = useCallback(async () => {
-    const res = await fetch("/api/curses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) });
-    const body = await res.json();
-    if (res.status === 201) {
-      setGraph((body as { graph: Graph }).graph);
-      setError(null);
-    } else {
-      setError(body as ParseError);
+    try {
+      const res = await fetch("/api/curses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) });
+      const body = await res.json();
+      if (res.status === 201) {
+        setGraph((body as { graph: Graph }).graph);
+        setError(null);
+      } else {
+        setError(body as ParseError);
+      }
+    } catch {
+      setError({ line: 1, message: "Could not reach the server. Check your connection and try again." });
     }
   }, [source]);
 
@@ -55,18 +59,27 @@ export function GrimMod() {
 
   const burst = useCallback(async () => {
     setBusy(true);
-    for (let i = 1; i <= BURST_SIZE; i++) {
-      await send({ author: RAID_BOT, text: `RAID ${i}/${BURST_SIZE}: join now http://spam.invalid/${i}`, flagged: true });
-      if (i < BURST_SIZE) await sleep(BURST_GAP_MS);
+    try {
+      for (let i = 1; i <= BURST_SIZE; i++) {
+        await send({ author: RAID_BOT, text: `RAID ${i}/${BURST_SIZE}: join now http://spam.invalid/${i}`, flagged: true });
+        if (i < BURST_SIZE) await sleep(BURST_GAP_MS);
+      }
+    } catch {
+      // A network error ends the burst early; the finally block re-enables the button.
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }, [send]);
 
   const reset = useCallback(async () => {
-    const d = (await (await fetch("/api/reset", { method: "POST" })).json()) as { chat: ChatSnapshot };
-    setChat(d.chat);
-    setLatest(null);
-    setGraph(null);
+    try {
+      const d = (await (await fetch("/api/reset", { method: "POST" })).json()) as { chat: ChatSnapshot };
+      setChat(d.chat);
+      setLatest(null);
+      setGraph(null);
+    } catch {
+      // Keep the current view if the server cannot be reached.
+    }
   }, []);
 
   const lines = source.split("\n");
@@ -106,7 +119,7 @@ export function GrimMod() {
             </li>
           ))}
         </ul>
-        <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void send({ author, text, flagged }); setText(""); } }}>
+        <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void send({ author, text, flagged }).catch(() => undefined); setText(""); } }}>
           <label className="text-xs">Author<input aria-label="Author" value={author} onChange={(e) => setAuthor(e.target.value)} className="mt-1 block w-24 rounded bg-zinc-800 px-2 py-1 text-sm" /></label>
           <label className="grow text-xs">Message<input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} className="mt-1 block w-full rounded bg-zinc-800 px-2 py-1 text-sm" /></label>
           <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={flagged} onChange={(e) => setFlagged(e.target.checked)} />Flagged</label>
