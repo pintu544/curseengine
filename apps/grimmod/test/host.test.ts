@@ -221,3 +221,25 @@ describe("refused curses (shadow executor)", () => {
     expect(h.chat.messages.filter((m) => m.system).map((m) => m.text)).toEqual(["v2"]);
   });
 });
+
+describe("audit-write ordering", () => {
+  it("records a grimoire entry for every effect already applied when the pass throws a non-capability error", async () => {
+    const now = T0 + 60_000;
+    const burst = burstMessages(now, 3);
+    await host.receive(burst[0]!);
+    await host.receive(burst[1]!);
+    // Inject a failure AFTER the executor has applied its effects (mute + escalate on the third flagged message).
+    const ex = (host as unknown as { executor: { handle(e: unknown): Promise<unknown> } }).executor;
+    const real = ex.handle.bind(ex);
+    ex.handle = async (e) => {
+      await real(e);
+      throw new Error("injected mid-pass failure");
+    };
+    await expect(host.receive(burst[2]!)).rejects.toThrow("injected mid-pass failure");
+
+    expect(host.chat.mutes).toHaveLength(1); // effects were applied...
+    expect(host.chat.escalations).toHaveLength(1);
+    expect(host.grimoire.entries.map((e) => e.kind)).toEqual(["mute", "escalate"]); // ...and audited
+    expect(host.decisions.at(-1)!.outcome).toBe("executed");
+  });
+});

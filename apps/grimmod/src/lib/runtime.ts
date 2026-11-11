@@ -59,7 +59,20 @@ async function attempt(r: Runtime): Promise<void> {
     if (!r.pool) return;
     const store = (r.store ??= new PgStore<GrimmodSnapshot>(r.pool));
     const { snapshot, entries } = await withTimeout(store.init(), INIT_TIMEOUT_MS);
-    if (snapshot) {
+    // Read AFTER the await: a mutation that landed while init() was in flight also makes memory the working copy.
+    if (r.dirty) {
+      if (snapshot) {
+        // The database holds state this process never loaded, and memory has diverged from it. Overwriting the snapshot
+        // row would destroy that state, and saving into its epoch would silently drop colliding grimoire seqs.
+        // Stay unhydrated (health reports down with this code) and leave the database untouched until an operator decides.
+        r.lastError = "HYDRATE_CONFLICT";
+        store.status = "down";
+        store.lastError = r.lastError;
+        return;
+      }
+      // Empty database: nothing to reload or overwrite. Keep the in-memory host; the pending save flushes it, including
+      // every grimoire entry recorded while the database was down (store.persistedSeq is 0, so all of them are inserted).
+    } else if (snapshot) {
       const host = new GrimModHost();
       host.restoreState(snapshot, entries);
       (globalThis as typeof globalThis & { __grimmodHost?: GrimModHost }).__grimmodHost = host;
@@ -77,21 +90,24 @@ async function attempt(r: Runtime): Promise<void> {
   }
 }
 
+/** Runs one (re)connection attempt unless one is in flight (then waits for it) or the last one was under RETRY_AFTER_MS ago. */
+async function reconnect(r: Runtime): Promise<void> {
+  if (r.inflight) await r.inflight;
+  else if (Date.now() - r.lastAttempt >= RETRY_AFTER_MS) {
+    r.inflight = attempt(r).finally(() => { r.inflight = null; });
+    await r.inflight;
+  }
+}
+
 /**
  * The host, hydrated from Postgres when persistence is on. Never throws because of the database: if it is unreachable
- * the host boots empty in memory and `persistenceHealth()` says so. While the database is down and nothing has changed
- * in memory yet, a reconnection is retried at most every RETRY_AFTER_MS.
+ * the host boots empty in memory and `persistenceHealth()` says so. While the database is down a reconnection is retried
+ * at most every RETRY_AFTER_MS, also after something changed in memory (see `attempt`: a dirty host is never replaced).
  */
 export async function getHostReady(): Promise<GrimModHost> {
   if (!persistenceConfigured()) return getHost();
   const r = rt();
-  if (!r.hydrated && !r.dirty) {
-    if (r.inflight) await r.inflight;
-    else if (Date.now() - r.lastAttempt >= RETRY_AFTER_MS) {
-      r.inflight = attempt(r).finally(() => { r.inflight = null; });
-      await r.inflight;
-    }
-  }
+  if (!r.hydrated) await reconnect(r);
   return getHost();
 }
 
@@ -104,7 +120,13 @@ export async function persistHost(host: GrimModHost, opts: { rotate?: boolean } 
   if (!persistenceConfigured()) return;
   const r = rt();
   if (opts.rotate) r.pendingRotate = true;
-  if (!r.hydrated || !r.store) { r.dirty = true; return; }
+  if (!r.hydrated || !r.store) {
+    // Memory is now the working copy. Retry the database (rate limited); if it is back, the save below flushes the
+    // entries recorded while it was down. If not, they stay in memory and the next save tries again.
+    r.dirty = true;
+    await reconnect(r);
+    if (!r.hydrated || !r.store) return;
+  }
   try {
     const rotate = r.pendingRotate;
     await r.store.save(host.snapshotState(), host.grimoire.entries, rotate);

@@ -107,7 +107,7 @@ The total Kiro spend — about 50 credits of the 4,000-credit pack — is itself
 
 ## Slice 4, Session 1: specs, persistence hardening, MCP attempt
 
-Two new specs were written before any code, in the same three-file style: `.kiro/specs/grimoire-persistence-hardening/` (implemented in this session) and `.kiro/specs/grimoire-auditor-agent/` (spec only; implementation is the next session). The hardening covered both apps: a `<app>_meta` table with a numbered, idempotent boot migration under an advisory lock (`SCHEMA_TOO_NEW` and `SCHEMA_CORRUPT` refuse rather than rewrite); GrimMod's persisted `suppressed` list capped at the latest 200 with the exact total kept (Slice-3 QA warning W1); and `/api/health` gaining `persistence.schemaVersion`. Zero files under `packages/curse-engine` changed. The Context7 MCP outcome is in answer 6 above: configured, blocked, not used.
+Two new specs were written before any code, in the same three-file style: `.kiro/specs/grimoire-persistence-hardening/` (implemented in this session) and `.kiro/specs/grimoire-auditor-agent/` (spec only; implementation is the next session). The hardening covered both apps: a `<app>_meta` table with a numbered, idempotent boot migration under an advisory lock (`SCHEMA_TOO_NEW` and `SCHEMA_CORRUPT` refuse rather than rewrite); GrimMod's persisted `suppressed` list capped at the latest 200 with the exact total kept (Slice-3 QA warning W1); and `/api/health` gaining `persistence.schemaVersion`. Zero files under `packages/curse-engine` changed. The Context7 MCP outcome is in answer 6 above: configured, blocked, not used. The project owner chose Azure Postgres persistence for these apps on 2026-11-11 and confirms the operator-configured database as the intended destination for host state and grimoire data (the auditor's owner sign-off item).
 
 ## Slice 4, Session 2: Context7 re-check and the grimoire-auditor agent
 
@@ -148,6 +148,7 @@ The brief asked for the `grimoire-auditor` agent to be invoked by name via sub-a
 **Follow-ups left open (warnings, not inviolable breaches).**
 - GrimMod: live `receive` clamps the clock to the latest message time while the simulator feeds raw `at` values, so a backdated event can differ between simulation and live (not reachable through the HTTP API, which stamps `Date.now()`).
 - Both apps: executor count history (GrimMod) and quota usage (both) are not persisted across restarts, as the host doc comments say.
+- Deadbeat simulation is single-tick by design — the one-email-per-tier dedupe lives in the host, so a multi-tick simulate history can predict repeat emails the live host suppresses.
 - Deadbeat: the simulator runs over fixture invoices at the reference time with no sent-tier filter, so it answers "what would run on a fresh fixture", not "what would run live now".
 
 **False negatives:** none established. Without the seeded negative fixture (spec task 4, not built) there is no measurement of what the auditor misses on known-bad input, so no claim is made either way. The stand-in also read only part of each app (it did not read `persistence.ts`, the undo routes or the UI), which it disclosed.

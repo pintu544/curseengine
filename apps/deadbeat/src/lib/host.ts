@@ -172,25 +172,31 @@ export class DeadbeatHost {
     this.pendingRefs = [];
     const decisions: DecisionRecord[] = [];
     const run = async (ex: Executor): Promise<void> => {
+      const before = ex.records.length;
       try {
         decisions.push(...(await ex.handle(event)));
       } catch (err) {
-        if (!(err instanceof UndeclaredCapabilityError)) throw err;
-        decisions.push(err.record);
+        if (err instanceof UndeclaredCapabilityError) decisions.push(err.record);
+        else { decisions.push(...ex.records.slice(before)); throw err; } // effects already applied still get audited below
       }
     };
-    await run(this.executor);
-    for (const [name, shadow] of this.refused) if (!this.state.hasSent(invoice.id, name)) await run(shadow);
-    this.decisions.push(...decisions);
     const summary = `invoice ${invoice.id} (${invoice.clientName}), ${invoice.daysOverdue} days overdue`;
-    let k = 0;
-    for (const rec of decisions) {
-      const n = rec.actions.filter((a) => a.status === "taken").length;
-      if (n > 0) this.state.markSent(invoice.id, rec.curse);
-      this.grimoire.recordDecision(rec, summary, this.pendingRefs.slice(k, k + n));
-      k += n;
+    // Audit-write ordering: effects are applied inside executor.handle, so whatever happens afterwards, every decision
+    // gathered so far must be marked sent and reach the grimoire before an error propagates. Hence the finally.
+    try {
+      await run(this.executor);
+      for (const [name, shadow] of this.refused) if (!this.state.hasSent(invoice.id, name)) await run(shadow);
+    } finally {
+      this.decisions.push(...decisions);
+      let k = 0;
+      for (const rec of decisions) {
+        const n = rec.actions.filter((a) => a.status === "taken").length;
+        if (n > 0) this.state.markSent(invoice.id, rec.curse);
+        this.grimoire.recordDecision(rec, summary, this.pendingRefs.slice(k, k + n));
+        k += n;
+      }
+      this.pendingRefs = [];
     }
-    this.pendingRefs = [];
     return decisions;
   }
 

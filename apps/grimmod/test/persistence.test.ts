@@ -4,7 +4,7 @@
  * SQL and the restart logic work against that emulator; it is not proof of behaviour on a real Postgres server.
  */
 import { DataType, newDb } from "pg-mem";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as getGrimoire } from "../app/api/grimoire/route";
 import { POST as undo } from "../app/api/grimoire/[id]/undo/route";
 import { POST as postCurse } from "../app/api/curses/route";
@@ -14,7 +14,7 @@ import { GET as health } from "../app/api/health/route";
 import { POST as reset } from "../app/api/reset/route";
 import { EXAMPLE_CURSE } from "@/lib/fixtures";
 import { SUPPRESSED_PERSIST_LIMIT } from "@/lib/host";
-import { usePersistencePool } from "@/lib/runtime";
+import { RETRY_AFTER_MS, usePersistencePool } from "@/lib/runtime";
 import { LATEST_SCHEMA_VERSION, MIGRATIONS, migrate, type SqlPool } from "@/lib/persistence";
 
 const post = (url: string, body: unknown) =>
@@ -172,6 +172,65 @@ describe("boot resilience", () => {
     expect(await rows("SELECT seq FROM grimmod_grimoire ORDER BY seq")).toHaveLength(2);
     restart(real);
     expect((await (await getEvents()).json()).chat.mutes).toHaveLength(1);
+  });
+});
+
+describe("reconnect after a failed boot", () => {
+  /** A pool whose database can be switched off and on. Only Date is faked, so the reconnect rate limit can be stepped over. */
+  const toggled = () => {
+    const real = pool;
+    const state = { broken: true };
+    const gone = () => Promise.reject(Object.assign(new Error("gone"), { code: "ECONNREFUSED" }));
+    const flaky: SqlPool = { query: (t, v) => (state.broken ? gone() : real.query(t, v)), connect: () => (state.broken ? gone() : real.connect()) };
+    return { real, state, flaky };
+  };
+  const afterRetryWindow = () => vi.setSystemTime(Date.now() + RETRY_AFTER_MS + 1);
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("retries hydration on a later save and flushes the grimoire entries recorded while the database was down", async () => {
+    const { real, state, flaky } = toggled();
+    restart(flaky);
+    await getEvents(); // boot attempt fails: database down
+    expect((await (await health()).json()).persistence).toMatchObject({ status: "down", error: "ECONNREFUSED" });
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    await burst(3); // third flagged message mutes and escalates: 2 entries
+    const inMemory = (await (await getGrimoire()).json()).entries;
+    expect(inMemory).toHaveLength(2);
+    expect(await real.query("SELECT 1 FROM information_schema.tables WHERE table_name = 'grimmod_grimoire'").then((r) => r.rows)).toEqual([]); // nothing reached the store
+
+    state.broken = false;
+    afterRetryWindow();
+    await postEvent(post("/api/events", { author: "someone", text: "hello" }));
+    expect((await (await health()).json()).persistence).toEqual({ mode: "postgres", status: "ok", schemaVersion: LATEST_SCHEMA_VERSION });
+    const stored = await rows("SELECT seq, entry FROM grimmod_grimoire ORDER BY seq");
+    expect(stored).toHaveLength(2);
+    expect(stored.map((r) => (r["entry"] as any).id)).toEqual(inMemory.map((e: any) => e.id));
+
+    restart(real); // the entries and state now survive a restart
+    expect((await (await getGrimoire()).json()).entries).toHaveLength(2);
+  });
+
+  it("does not overwrite a database that already holds state: stays down with HYDRATE_CONFLICT and leaves every row untouched", async () => {
+    restart(); // healthy boot, persist some state and entries
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    await burst(3); // third flagged message mutes and escalates: 2 entries
+    const stateRows = await rows("SELECT id, epoch, snapshot FROM grimmod_state");
+    const grimRows = await rows("SELECT epoch, seq, entry FROM grimmod_grimoire ORDER BY seq");
+    expect(grimRows).toHaveLength(2);
+
+    const { state, flaky } = toggled();
+    restart(flaky); // new process, database down at boot, diverging in-memory work
+    await getEvents();
+    await postCurse(post("/api/curses", { source: EXAMPLE_CURSE }));
+    await burst(3); // third flagged message mutes and escalates: 2 entries
+    state.broken = false;
+    afterRetryWindow();
+    await postEvent(post("/api/events", { author: "someone", text: "hello" }));
+
+    expect((await (await health()).json()).persistence).toMatchObject({ status: "down", error: "HYDRATE_CONFLICT" });
+    expect(await rows("SELECT id, epoch, snapshot FROM grimmod_state")).toEqual(stateRows);
+    expect(await rows("SELECT epoch, seq, entry FROM grimmod_grimoire ORDER BY seq")).toEqual(grimRows);
   });
 });
 

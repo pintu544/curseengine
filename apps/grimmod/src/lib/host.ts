@@ -153,31 +153,39 @@ export class GrimModHost {
     const event = toEngineEvent(stored);
     this.pendingRefs = [];
     const decisions: DecisionRecord[] = [];
-    try {
-      decisions.push(...(await this.executor.handle(event)));
-    } catch (err) {
-      if (!(err instanceof UndeclaredCapabilityError)) throw err;
-      decisions.push(err.record);
-    }
-    for (const shadow of this.refused.values()) {
-      try {
-        decisions.push(...(await shadow.handle(event)));
-      } catch (err) {
-        if (!(err instanceof UndeclaredCapabilityError)) throw err;
-        decisions.push(err.record);
-      }
-    }
-    this.decisions.push(...decisions);
-    // Every taken action gets exactly one grimoire entry, in order. Refs align with taken actions.
+    // Audit-write ordering: effects are applied inside executor.handle, so whatever happens afterwards, every decision
+    // gathered so far must reach the grimoire before an error propagates. Hence the finally.
     const summary = `message from ${stored.author}: "${stored.text.length > 80 ? `${stored.text.slice(0, 80)}...` : stored.text}"`;
-    let k = 0;
-    for (const rec of decisions) {
-      const n = rec.actions.filter((a) => a.status === "taken").length;
-      this.grimoire.recordDecision(rec, summary, this.pendingRefs.slice(k, k + n));
-      k += n;
+    try {
+      await this.collect(this.executor, event, decisions);
+      for (const shadow of this.refused.values()) await this.collect(shadow, event, decisions);
+    } finally {
+      this.decisions.push(...decisions);
+      // Every taken action gets exactly one grimoire entry, in order. Refs align with taken actions.
+      let k = 0;
+      for (const rec of decisions) {
+        const n = rec.actions.filter((a) => a.status === "taken").length;
+        this.grimoire.recordDecision(rec, summary, this.pendingRefs.slice(k, k + n));
+        k += n;
+      }
+      this.pendingRefs = [];
     }
-    this.pendingRefs = [];
     return { message: { ...stored }, decisions, chat: this.chat.snapshot() };
+  }
+
+  /**
+   * Runs one executor on the event and appends its decision records to `out`. If the executor throws anything other
+   * than the sandbox refusal, the records it had already produced (their effects are applied) are appended first and
+   * the error is rethrown, so the caller can still audit them.
+   */
+  private async collect(ex: Executor, event: EngineEvent, out: DecisionRecord[]): Promise<void> {
+    const before = ex.records.length;
+    try {
+      out.push(...(await ex.handle(event)));
+    } catch (err) {
+      if (err instanceof UndeclaredCapabilityError) out.push(err.record);
+      else { out.push(...ex.records.slice(before)); throw err; }
+    }
   }
 
   /** Exact number of messages suppressed while muted since the last reset (not limited by the retained window). */

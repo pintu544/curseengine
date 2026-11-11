@@ -53,6 +53,7 @@ While it is off, `POST /api/events` returns **503** (`host.advanceClock` throws 
 - The clock only moves forward. At the reference clock the older invoices are already past several thresholds, so the first tick sends tiers 1, 2 and 3 to the invoices that qualify (a catch-up); later ticks add nothing for them.
 - Fixture data is in `src/lib/fixtures.ts` (stable ids, reference clock 2026-11-11T12:00:00Z; invoices 3, 8, 15, 22 and 40 days overdue).
 - Simulation uses one tick per invoice at the reference clock, so it is a "what would run now" snapshot, not a multi-day replay.
+- Deadbeat simulation is single-tick by design — the one-email-per-tier dedupe lives in the host, so a multi-tick simulate history can predict repeat emails the live host suppresses.
 - Single process, in-memory state on `globalThis`. No authentication: local demo only, do not expose it.
 - `DeadbeatHost.intake` is the single point where events reach the executor; the FR9 kill switch is enforced there and at the start of `advanceClock`.
 

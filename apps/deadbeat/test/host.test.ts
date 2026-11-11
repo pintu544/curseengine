@@ -126,3 +126,26 @@ describe("user curses", () => {
     expect(res.decisions.some((d) => d.curse === "noisy" && d.outcome === "failed")).toBe(true);
   });
 });
+
+describe("audit-write ordering", () => {
+  it("records a grimoire entry for every effect already applied when the pass throws a non-capability error", async () => {
+    // Inject a failure AFTER the executor has applied its effects for the first invoice's tick.
+    const ex = (host as unknown as { executor: { handle(e: unknown): Promise<unknown> } }).executor;
+    const real = ex.handle.bind(ex);
+    let calls = 0;
+    ex.handle = async (e) => {
+      const out = await real(e);
+      // inv-001 (4 days overdue) matches nothing; the second tick (inv-002) is the first that sends.
+      if (++calls === 2) throw new Error("injected mid-pass failure");
+      return out;
+    };
+    await expect(host.advanceClock(1)).rejects.toThrow("injected mid-pass failure");
+
+    expect(host.state.outbox.length).toBeGreaterThan(0);
+    const taken = host.decisions.flatMap((d) => d.actions).filter((a) => a.status === "taken").length;
+    expect(taken).toBeGreaterThan(0);
+    expect(host.grimoire.entries).toHaveLength(taken);
+    expect(host.grimoire.entries.filter((e) => e.kind === "email")).toHaveLength(host.state.outbox.length);
+    expect(host.state.hasSent("inv-002", "late-payers")).toBe(true);
+  });
+});
