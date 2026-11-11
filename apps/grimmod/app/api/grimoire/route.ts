@@ -4,8 +4,21 @@ import { json } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/grimoire: every audit entry in order, plus the messages suppressed while their author was muted. */
+/** Most recent suppressed-while-muted entries returned; the host keeps its full record, the payload does not. */
+export const SUPPRESSED_LIMIT = 50;
+
+/**
+ * GET /api/grimoire: every audit entry in order, plus the exact count of messages suppressed while their author
+ * was muted and only the most recent SUPPRESSED_LIMIT of them (`suppressedTruncated` says whether any were dropped).
+ */
 export async function GET(): Promise<Response> {
   const host = getHost();
-  return json({ entries: viewOf(host.grimoire), suppressedWhileMuted: host.suppressed, note: MUTED_NOTE });
+  const total = host.suppressed.length;
+  return json({
+    entries: viewOf(host.grimoire),
+    suppressedTotal: total,
+    suppressed: host.suppressed.slice(-SUPPRESSED_LIMIT),
+    suppressedTruncated: total > SUPPRESSED_LIMIT,
+    note: MUTED_NOTE,
+  });
 }

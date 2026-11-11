@@ -42,7 +42,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   } else {
     events = simulationHistory().map(toEngineEvent);
   }
-  // Declared set mirrors the chat adapter (no email). The report is built from a recording stub only.
+  // Declared set mirrors the chat adapter (no email). A curse needing an undeclared capability (e.g. email) runs in
+  // its own shadow executor and is refused at preflight: no quota consumed, identical refusal per event (see
+  // "Refused curses" in the design spec). The report is built from a recording stub only.
   const report = await simulate({ curses: [curse], events, quotaPerHour: DEMO_QUOTA_PER_HOUR, declared: ["mute", "post", "escalate"] });
   const expected = custom ? undefined : DESIGNED_SPAMMERS;
   const falsePositives = expected ? report.summary.mutedTargets.filter((t) => !expected.includes(t)) : undefined;

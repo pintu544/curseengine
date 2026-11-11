@@ -13,7 +13,7 @@
 - [x] T2.2 Property-based parity tests (≥1,000 cases) _NFR1_
 - [x] T2.3 Grimoire UI + one-click undo _FR5, FR6_
 - [x] T2.4 Fixture contract finalised
-- [ ] T2.5 Slice 2 QA
+- [x] T2.5 Slice 2 QA (W1-W5 fix pass)
 
 ## Slice 3 — Deadbeat + submission
 - [ ] T3.1 Deadbeat app _FR8_ · [ ] T3.2 Kill-switch proof _FR9_ · [ ] T3.3 Deploy · [ ] T3.4 Kiro write-up · [ ] T3.5 Demo video · [ ] T3.6 Pre-submission review + submit

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { parseCurse } from "@curseengine/engine";
+import { parseCurse, type DecisionRecord } from "@curseengine/engine";
 import { burstMessages, EXAMPLE_CURSE, RAID_BOT } from "@/lib/fixtures";
 import { GrimModHost } from "@/lib/host";
 
@@ -193,5 +193,31 @@ describe("monotonic host clock", () => {
     expect(host.chat.now).toBe(T0 + 7000);
     expect(later.message.muted).toBe(true);
     expect(later.chat.mutes).toHaveLength(1);
+  });
+});
+
+describe("refused curses (shadow executor)", () => {
+  it("an email curse is refused identically on consecutive events and consumes no quota", async () => {
+    const h = new GrimModHost(T0, 1);
+    h.install(parseCurse("curse mailer: when message -> email nudge to author"));
+    const outs: DecisionRecord[][] = [];
+    for (let i = 0; i < 3; i++) outs.push((await h.receive(msg(`r${i}`, "amy", T0 + i * 1000, false))).decisions);
+    for (const ds of outs) {
+      expect(ds).toHaveLength(1);
+      expect(ds[0]!.outcome).toBe("failed");
+    }
+    const shape = (d: DecisionRecord) => ({ ...d, eventId: "", at: 0 });
+    expect(shape(outs[1]![0]!)).toEqual(shape(outs[0]![0]!));
+    expect(shape(outs[2]![0]!)).toEqual(shape(outs[0]![0]!));
+    expect(h.decisions.some((d) => d.outcome === "skipped-quota")).toBe(false);
+  });
+
+  it("W2: installing a curse with an existing name replaces it (last wins)", async () => {
+    const h = new GrimModHost(T0);
+    h.install(parseCurse('curse dup: when message -> post "v1" to general'));
+    h.install(parseCurse('curse dup: when message -> post "v2" to general'));
+    const r = await h.receive(msg("d1", "amy", T0 + 1000, false));
+    expect(r.decisions).toHaveLength(1);
+    expect(h.chat.messages.filter((m) => m.system).map((m) => m.text)).toEqual(["v2"]);
   });
 });

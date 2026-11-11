@@ -5,7 +5,7 @@ import type { ChatState } from "./chat-state";
 /**
  * Repository interface for the grimoire. Slice 2 keeps it in memory (the engine AuditLog);
  * a Postgres (Neon) implementation can replace it at deploy time without touching callers.
- * Append-only: there is no update or delete.
+ * Append-only within a host's lifetime: there is no update or delete; a fixture reset starts a new host lifetime.
  */
 export type GrimoireRepository = Pick<AuditLog, "entries" | "get" | "isReversed" | "record" | "recordDecision" | "reverse">;
 

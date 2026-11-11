@@ -53,6 +53,9 @@ These describe how the executor in `packages/curse-engine/src/executor.ts` behav
 8. **Capabilities are own-properties.** A capability counts as declared only if it is an own property of the capabilities object and a function, checked both at preflight and at dispatch. Inherited (prototype-chain) capabilities are undeclared.
 9. **Host clock (GrimMod).** The host clock never moves backwards: `now = max(now, message.at)`. A backdated message is treated as arriving at the current clock time, for the chat record, mute windows and the event fed to the executor.
 
+### Refused curses
+A curse whose action needs a capability the host does not declare (for example `email` in GrimMod) runs in its own shadow executor, in both the GrimMod host and `simulate()`. The refusal happens at preflight, consumes no quota, repeats identically on every matching event, and the curse's count history is its own (a shadow executor only sees events from the moment the curse was installed). Other curses on the same event are unaffected. This describes existing behaviour; it is pinned by tests.
+
 ## Data model
 `curses`(id, app, name, source_text, ast jsonb, enabled, created_at) · `events`(id, app, type, actor, payload, occurred_at) · `audit_entries`(id, curse_id, event_id, decision_path, action, target, status applied|simulated|reversed, reversal_of, created_at) · Deadbeat: `invoices`, `outbox`.
 

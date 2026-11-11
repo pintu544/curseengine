@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { POST as refresh } from "../app/api/fixtures/route";
 import { POST as simulate } from "../app/api/curses/[id]/simulate/route";
 import { REFERENCE_NOW, simulationHistory } from "@/lib/fixtures";
+import { POST as postEvent } from "../app/api/events/route";
+import { GET as getGrimoire } from "../app/api/grimoire/route";
 import { getHost, refreshFixtures } from "@/lib/host";
 
 const sim = () =>
@@ -36,5 +38,28 @@ describe("fixture contract", () => {
     const before = getHost().chat.messages.length;
     const r = await (await refresh()).json();
     expect(r.messages).toBe(before - 1);
+  });
+
+  it("is a full demo reset: marks reset:true and discards grimoire, mutes, suppressed list and decisions", async () => {
+    await refresh();
+    const ev = (text: string) => postEvent(new Request("http://test/api/events", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ author: "raid-bot", text, flagged: true }) }));
+    for (let i = 0; i < 3; i++) await ev(`RAID ${i}`);
+    await ev("while muted");
+    const before = await (await getGrimoire()).json();
+    expect(before.entries.length).toBeGreaterThan(0);
+    expect(before.suppressedTotal).toBe(1);
+    expect(getHost().chat.mutes).toHaveLength(1);
+    expect(getHost().decisions.length).toBeGreaterThan(0);
+
+    const r = await (await refresh()).json();
+    expect(r.reset).toBe(true);
+    const after = await (await getGrimoire()).json();
+    expect(after.entries).toEqual([]);
+    expect(after.suppressedTotal).toBe(0);
+    expect(after.suppressed).toEqual([]);
+    expect(getHost().decisions).toEqual([]);
+    expect(getHost().chat.mutes).toEqual([]);
+    expect(getHost().chat.snapshot().mutes).toEqual([]);
+    expect(r.curses).toEqual(["spam-strikes"]);
   });
 });

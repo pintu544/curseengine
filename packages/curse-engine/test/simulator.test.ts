@@ -73,4 +73,25 @@ describe("simulate()", () => {
     const report = await simulate({ curses, events, quotaPerHour: 9 });
     expect(report.suppressed.map((s) => s.eventId)).toEqual(["e2"]);
   });
+
+  it("W2: duplicate curse names resolve last-wins, matching GrimModHost.install", async () => {
+    const v1 = parseCurse('curse dup: when message -> post "v1" to general');
+    const v2 = parseCurse('curse dup: when message -> post "v2" to general');
+    const report = await simulate({ curses: [v1, v2], events: [msg("a1", 1, "bob", false)], quotaPerHour: 9 });
+    expect(report.decisions).toHaveLength(1);
+    expect(report.intended.map((a) => a.message)).toEqual(["v2"]);
+  });
+
+  it("W3: an undeclared-capability curse is refused identically per event and consumes no quota", async () => {
+    const mail = parseCurse("curse mailer: when message -> email nudge to author");
+    const events = [msg("a1", 1, "bob", false), msg("a2", 2, "bob", false), msg("a3", 3, "bob", false)];
+    const report = await simulate({ curses: [mail], events, quotaPerHour: 1, declared: ["mute", "post", "escalate"] });
+    expect(report.decisions).toHaveLength(3);
+    expect(report.decisions.map((d) => d.outcome)).toEqual(["failed", "failed", "failed"]);
+    expect(report.decisions.some((d) => d.outcome === "skipped-quota")).toBe(false);
+    const shape = (d: (typeof report.decisions)[number]) => ({ ...d, eventId: "", at: 0 });
+    expect(shape(report.decisions[1]!)).toEqual(shape(report.decisions[0]!));
+    expect(shape(report.decisions[2]!)).toEqual(shape(report.decisions[0]!));
+    expect(report.intended).toEqual([]);
+  });
 });

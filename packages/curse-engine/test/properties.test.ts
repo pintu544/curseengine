@@ -8,8 +8,8 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
-  AlreadyReversedError, AuditLog, createExecutor, parseCurse, simulate,
-  type Capabilities, type Curse, type DecisionRecord, type EngineEvent, type Inverse,
+  AlreadyReversedError, AuditLog, createExecutor, hasCapability, parseCurse, simulate, UndeclaredCapabilityError,
+  type Capabilities, type CapabilityName, type Curse, type DecisionRecord, type EngineEvent, type Inverse,
 } from "../src/index.js";
 
 /** Number of generated cases for the parity property (requirement: at least 1,000). */
@@ -27,61 +27,104 @@ const CURSES: Curse[] = [
   "curse hot-score: when message where score >= 7 -> mute author for 2 hours; escalate to owner",
   "curse burst: when message where count(message flagged) >= 2 within 1 hour and channel = general -> mute author for 30 minutes; escalate to owner",
   "curse reporter-mute: when message where flagged = true -> mute reporter for 1 hour",
+  // Widened surface: tick + where + email, webhook trigger, email action on messages, matches (valid and invalid pattern).
+  "curse late-payers: every 1 day where days_overdue >= 7 -> email polite-nudge to client",
+  'curse pay-hook: on webhook /pay -> post "paid" to ops',
+  "curse mailer: when message where flagged = true -> email nudge to author",
+  'curse benign-match: when message where text matches "^FREE" -> post "starts with FREE" to general',
+  'curse bad-pattern: when message where text matches "(" -> post "never" to general',
+  // Needs escalate: refused (own shadow executor) on sides that leave escalate undeclared.
+  "curse escalate-only: when message where score >= 3 -> escalate to owner",
 ].map((s) => parseCurse(s));
 
 const AUTHORS = ["amy", "bob", "cy", "dee"];
 const TEXTS = ["hello there", "FREE gift cards", "buy it now please", "ok", "FREE and buy now"];
 
+/** Value shapes for `flagged`: exactly `true` is flagged; every other shape must fail safe (not flagged). */
+const flaggedArb = fc.oneof(
+  { weight: 6, arbitrary: fc.boolean() as fc.Arbitrary<unknown> },
+  { weight: 1, arbitrary: fc.constantFrom<unknown>("true", 1, {}, "false", 0, null) },
+);
+const authorArb = fc.oneof(
+  { weight: 12, arbitrary: fc.option(fc.constantFrom(...AUTHORS), { nil: undefined }) as fc.Arbitrary<unknown> },
+  { weight: 1, arbitrary: fc.constantFrom<unknown>(7, true, {}, "") },
+);
+
 const eventsArb = fc
   .array(
     fc.record({
+      kind: fc.constantFrom("message", "message", "message", "tick", "webhook"),
+      tickInterval: fc.constantFrom<{ amount: number; unit: "hour" | "day" }>({ amount: 1, unit: "day" }, { amount: 24, unit: "hour" }, { amount: 1, unit: "hour" }),
+      daysOverdue: fc.integer({ min: 0, max: 12 }),
+      path: fc.constantFrom("/pay", "/other"),
+      // Top-level `flagged` and `fields.flagged` are generated independently, so they may disagree.
+      topFlagged: fc.option(flaggedArb, { nil: undefined }),
+      missingChannel: fc.boolean(),
       // Offsets deliberately unordered: includes backdated events and equal timestamps.
       offset: fc.oneof(fc.integer({ min: 0, max: 10 * DAY }), fc.integer({ min: 0, max: 5 })),
-      author: fc.option(fc.constantFrom(...AUTHORS), { nil: undefined }),
+      author: authorArb,
       text: fc.constantFrom(...TEXTS),
-      flagged: fc.boolean(),
+      flagged: flaggedArb,
       score: fc.option(fc.integer({ min: 0, max: 10 }), { nil: undefined }),
       channel: fc.constantFrom("general", "random"),
     }),
     { maxLength: 40 },
   )
   .map((rows): EngineEvent[] =>
-    rows.map((r, i) => ({
-      id: `e${i}`,
-      type: "message",
-      at: BASE + r.offset,
-      flagged: r.flagged,
-      fields: {
-        ...(r.author !== undefined ? { author: r.author } : {}),
-        text: r.text,
-        channel: r.channel,
-        flagged: r.flagged,
-        ...(r.score !== undefined ? { score: r.score } : {}),
-      },
-    })),
+    rows.map((r, i): EngineEvent => {
+      if (r.kind === "tick") {
+        return { id: `e${i}`, type: "tick", at: BASE + r.offset, interval: { amount: r.tickInterval.amount, unit: r.tickInterval.unit }, fields: { days_overdue: r.daysOverdue, client: "acme@example.com" } };
+      }
+      if (r.kind === "webhook") return { id: `e${i}`, type: "webhook", at: BASE + r.offset, fields: { path: r.path } };
+      return {
+        id: `e${i}`,
+        type: "message",
+        at: BASE + r.offset,
+        flagged: (r.topFlagged !== undefined ? r.topFlagged : r.flagged) as never,
+        fields: {
+          ...(r.author !== undefined ? { author: r.author } : {}),
+          text: r.text,
+          ...(r.missingChannel ? {} : { channel: r.channel }),
+          flagged: r.flagged,
+          ...(r.score !== undefined ? { score: r.score } : {}),
+        } as never,
+      };
+    }),
   );
 const cursesArb = fc.subarray(CURSES, { minLength: 1 });
 const quotaArb = fc.integer({ min: 1, max: 6 });
+/** Capability sets a host may declare. Both sides of the parity check get the same set; the email and escalate curses are refused when theirs is missing. */
+const KINDS: CapabilityName[] = ["mute", "post", "email", "escalate"];
+const declaredArb = fc.subarray(KINDS).chain((d) => fc.constantFrom(KINDS, KINDS, d));
 
-/** Independent "live host" model: its own Executor, its own stub capabilities, driven event by event. */
-async function liveRun(curses: Curse[], events: EngineEvent[], quota: number): Promise<DecisionRecord[]> {
+/** Independent "live host" model: its own Executors, its own stub capabilities, driven event by event. */
+async function liveRun(curses: Curse[], events: EngineEvent[], quota: number, declared: CapabilityName[] = KINDS): Promise<DecisionRecord[]> {
   let now = -Infinity;
   // Like the real ChatState: every mute is kept, and an author is muted while ANY mute still covers the clock.
   // (Regression: a last-write-wins map let a later 30-minute mute shorten an earlier 1-day mute.)
   const mutes: { author: string; until: number }[] = [];
-  const caps: Capabilities = {
-    mute: (r) => void mutes.push({ author: r.target, until: now + r.durationMs }),
-    post: () => {},
-    email: () => {},
-    escalate: () => {},
-  };
-  const ex = createExecutor({ curses, capabilities: caps, quotaPerHour: quota });
+  const caps: Capabilities = {};
+  if (declared.includes("mute")) caps.mute = (r) => void mutes.push({ author: r.target, until: now + r.durationMs });
+  if (declared.includes("post")) caps.post = () => {};
+  if (declared.includes("email")) caps.email = () => {};
+  if (declared.includes("escalate")) caps.escalate = () => {};
+  // Like GrimModHost: curses needing an undeclared capability each run in their own shadow executor.
+  const usable = curses.filter((c) => c.actions.every((a) => hasCapability(caps, a.kind)));
+  const executors = [
+    createExecutor({ curses: usable, capabilities: caps, quotaPerHour: quota }),
+    ...curses.filter((c) => !usable.includes(c)).map((c) => createExecutor({ curses: [c], capabilities: caps, quotaPerHour: quota })),
+  ];
   const out: DecisionRecord[] = [];
   for (const raw of events) {
     now = Math.max(now, raw.at);
     const author = raw.fields["author"];
     if (author !== undefined && mutes.some((m) => m.author === String(author) && now < m.until)) continue;
-    out.push(...(await ex.handle({ ...raw, at: now })));
+    for (const ex of executors) {
+      try { out.push(...(await ex.handle({ ...raw, at: now }))); } catch (err) {
+        if (!(err instanceof UndeclaredCapabilityError)) throw err;
+        out.push(err.record);
+      }
+    }
   }
   return out;
 }
@@ -90,17 +133,27 @@ describe("PARITY: simulator decision records equal live executor decision record
   it(`holds for ${PARITY_RUNS} generated event streams with zero divergences`, async () => {
     let cases = 0;
     let divergences = 0;
+    // Coverage tally: the widened generators must actually reach these engine paths.
+    const reached = { tickMatched: 0, webhookMatched: 0, refused: 0, matchesFalse: 0, emailTaken: 0 };
     await fc.assert(
-      fc.asyncProperty(cursesArb, eventsArb, quotaArb, async (curses, events, quota) => {
+      fc.asyncProperty(cursesArb, eventsArb, quotaArb, declaredArb, async (curses, events, quota, declared) => {
         cases++;
-        const live = await liveRun(curses, events, quota);
-        const sim = await simulate({ curses, events, quotaPerHour: quota });
+        const live = await liveRun(curses, events, quota, declared);
+        const sim = await simulate({ curses, events, quotaPerHour: quota, declared });
         try { expect(sim.decisions).toEqual(live); } catch (e) { divergences++; throw e; }
+        for (const d of sim.decisions) {
+          if (d.curse === "late-payers" && d.matched) reached.tickMatched++;
+          if (d.curse === "pay-hook" && d.matched) reached.webhookMatched++;
+          if (d.outcome === "failed" && d.actions.every((a) => a.status !== "taken")) reached.refused++;
+          if (d.curse === "bad-pattern" && !d.matched) reached.matchesFalse++;
+          if (d.actions.some((a) => a.kind === "email" && a.status === "taken")) reached.emailTaken++;
+        }
       }),
       { numRuns: PARITY_RUNS },
     );
     expect(cases).toBe(PARITY_RUNS);
     expect(divergences).toBe(0);
+    for (const [path, n] of Object.entries(reached)) expect(n, `generators never reached: ${path}`).toBeGreaterThan(0);
     console.log(`PARITY: ${cases} generated cases run, ${divergences} divergences`);
   });
 });

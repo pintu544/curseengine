@@ -6,6 +6,9 @@
  *   simulation history). Ids never depend on the clock or on load order.
  * - Fixed reference clock: `REFERENCE_NOW` (2026-11-11T12:00:00Z). `simulationHistory()` takes no clock;
  *   `fixtureHistory(now)` is shifted by whatever `now` the caller supplies, and `refreshFixtures()` uses REFERENCE_NOW.
+ * - Refresh is a FULL DEMO RESET: it rebuilds the fixture messages and curses AND discards all live state,
+ *   including the audit trail (grimoire), decisions, the suppressed-while-muted list, active mutes and any
+ *   user-installed curses. POST /api/fixtures says so in its response (`reset: true`).
  * - Idempotent load/refresh: loading or refreshing fixtures (POST /api/fixtures, `refreshFixtures()`) rebuilds
  *   the same state from scratch, so refreshing twice gives identical message and curse counts and identical
  *   simulation results. Nothing accumulates between refreshes.

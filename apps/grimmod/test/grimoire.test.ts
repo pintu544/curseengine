@@ -76,8 +76,10 @@ describe("grimoire", () => {
     expect(host.decisions).toHaveLength(decisions);
     expect(host.grimoire.entries).toHaveLength(entries);
     const g = await grimoire();
-    expect(g.suppressedWhileMuted).toHaveLength(1);
-    expect(g.suppressedWhileMuted[0]).toMatchObject({ author: "raid-bot" });
+    expect(g.suppressedTotal).toBe(1);
+    expect(g.suppressedTruncated).toBe(false);
+    expect(g.suppressed).toHaveLength(1);
+    expect(g.suppressed[0]).toMatchObject({ author: "raid-bot" });
     expect(g.note).toMatch(/no decision and no grimoire entry/);
   });
 
@@ -95,5 +97,20 @@ describe("grimoire", () => {
 
   it("returns 404 for an unknown entry", async () => {
     expect((await undoReq("g-999999")).status).toBe(404);
+  });
+});
+
+describe("suppressed list bound", () => {
+  it("returns an exact total but at most the latest 50 suppressed entries", async () => {
+    await burst(3); // third flagged message mutes raid-bot for a day
+    for (let i = 0; i < 60; i++) await postEvent(post("/api/events", { author: "raid-bot", text: `while muted ${i}`, flagged: true }));
+    const g = await grimoire();
+    expect(g.suppressedTotal).toBe(60);
+    expect(g.suppressed.length).toBeLessThanOrEqual(50);
+    expect(g.suppressed).toHaveLength(50);
+    expect(g.suppressedTruncated).toBe(true);
+    expect(g.suppressed.at(-1).eventId).toBe(getHost().suppressed.at(-1)!.eventId);
+    expect(g.suppressed[0].eventId).toBe(getHost().suppressed[10]!.eventId);
+    expect(getHost().suppressed).toHaveLength(60);
   });
 });

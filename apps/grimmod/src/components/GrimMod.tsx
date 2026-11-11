@@ -92,7 +92,7 @@ export function GrimMod() {
     <main className="mx-auto grid max-w-7xl gap-4 p-4 lg:grid-cols-2">
       <header className="lg:col-span-2 flex items-baseline justify-between">
         <h1 className="text-2xl font-bold">GrimMod <span className="text-sm font-normal text-zinc-400">chat moderation you can read</span></h1>
-        <button type="button" onClick={() => void reset()} className="rounded border border-zinc-600 px-3 py-1 text-sm hover:bg-zinc-800">Reset demo</button>
+        <button type="button" onClick={() => void reset()} className="rounded border border-zinc-600 px-3 py-1 text-sm hover:bg-zinc-800" title="Discards messages, decisions, the grimoire, active mutes and installed curses">Reset demo (discards all live state)</button>
       </header>
 
       <section aria-labelledby="chat-h" className="rounded border border-zinc-800 p-3">

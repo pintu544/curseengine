@@ -4,11 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import type { GrimoireView } from "@/lib/grimoire";
 import type { SuppressedMessage } from "@/lib/host";
 
-interface GrimoireResponse { entries: GrimoireView[]; suppressedWhileMuted: SuppressedMessage[]; note: string }
+interface GrimoireResponse { entries: GrimoireView[]; suppressedTotal: number; suppressed: SuppressedMessage[]; suppressedTruncated: boolean; note: string }
 
 const clock = (at: number) => new Date(at).toLocaleTimeString("en-GB");
 
-/** Grimoire: the append-only audit log. Undo appends a reversal entry; history is never edited. */
+/** Grimoire: the audit log, append-only within a host's lifetime. Undo appends a reversal entry; history is never edited. A fixture reset starts a new host lifetime. */
 export function Grimoire({ version, onUndone }: { version: unknown; onUndone: () => void }) {
   const [data, setData] = useState<GrimoireResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,8 +39,9 @@ export function Grimoire({ version, onUndone }: { version: unknown; onUndone: ()
       <h2 id="grim-h" className="mb-1 font-semibold">Grimoire</h2>
       <p data-testid="grimoire-note" className="mb-2 text-xs text-zinc-400">
         {data?.note ?? "Messages from a muted author produce no decision and no grimoire entry."}
-        {data && data.suppressedWhileMuted.length > 0 && <> Suppressed while muted so far: {data.suppressedWhileMuted.length}.</>}
+        {data && data.suppressedTotal > 0 && <span data-testid="suppressed-count"> {data.suppressedTotal} suppressed while muted{data.suppressedTruncated ? ` (showing latest ${data.suppressed.length})` : ""}.</span>}
       </p>
+      <p className="mb-2 text-xs text-zinc-500">Entries are never edited or deleted while this host runs. A demo reset starts a new, empty log.</p>
       {error && <div role="alert" className="mb-2 rounded bg-red-950 p-2 text-sm text-red-200">{error}</div>}
       {(data?.entries.length ?? 0) === 0 ? (
         <p className="text-sm text-zinc-400">No executed actions yet.</p>

@@ -1,5 +1,5 @@
 /**
- * Audit log (grimoire) primitive. Append-only: entries are never edited or deleted. Undo APPENDS a reversal
+ * Audit log (grimoire) primitive. Append-only within a host's lifetime: inside a running host, entries are never edited or deleted. A host reset (for example GrimMod's fixture refresh) starts a new host lifetime with an empty log. Undo APPENDS a reversal
  * entry that references the original; whether an entry has been reversed is derived from the log itself.
  */
 import type { CapabilityName, DecisionRecord } from "./executor.js";

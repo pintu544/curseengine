@@ -82,9 +82,14 @@ export async function simulate(opts: SimulateOptions): Promise<SimulationReport>
   if (declared.has("email")) caps.email = (r) => { intended.push({ curse: r.curse, eventId: r.eventId, kind: "email", target: r.to, at: clock, template: r.template }); };
   if (declared.has("escalate")) caps.escalate = (r) => { intended.push({ curse: r.curse, eventId: r.eventId, kind: "escalate", target: r.to, at: clock }); };
 
+  // Same rule as GrimModHost.install: a later curse with the same name replaces the earlier one (last wins,
+  // one executor entry per name, ordered by the position of the surviving curse).
+  const lastByName = new Map<string, number>();
+  opts.curses.forEach((c, i) => lastByName.set(c.name, i));
+  const curses = opts.curses.filter((c, i) => lastByName.get(c.name) === i);
   // Same split the live host makes: curses needing an undeclared capability get their own executor.
-  const runnable = opts.curses.filter((c) => c.actions.every((a) => hasCapability(caps, a.kind)));
-  const refused = opts.curses.filter((c) => !runnable.includes(c));
+  const runnable = curses.filter((c) => c.actions.every((a) => hasCapability(caps, a.kind)));
+  const refused = curses.filter((c) => !runnable.includes(c));
   const main: Executor = createExecutor({ curses: runnable, capabilities: caps, quotaPerHour: opts.quotaPerHour });
   const shadows = refused.map((c) => createExecutor({ curses: [c], capabilities: caps, quotaPerHour: opts.quotaPerHour }));
 
