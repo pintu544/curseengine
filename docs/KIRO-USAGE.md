@@ -3,7 +3,7 @@
 *Kiroween 2026 · Skeleton Crew · solo build by Pintu Kumar*
 *Repo: https://github.com/pintu544/curseengine — the `/.kiro` folder is in the repo root, exactly as it was used.*
 
-CurseEngine was built entirely in **Kiro Web sessions** — nine working sessions, roughly **50 of the 4,000 kiroween-26 credits**. No part of the engine or the apps was written outside Kiro; the only code-adjacent work done elsewhere was deployment packaging (zip assembly, Azure settings) and an independent adversarial QA pass after each slice, whose findings were fed back into the specs and fixed in new Kiro sessions.
+CurseEngine's core build — Slices 1–3 plus Postgres persistence — was built in **Kiro Web sessions**: nine working sessions, roughly **50 of the 4,000 kiroween-26 credits**. Slice 4 extended it on both surfaces: further Kiro Web sessions (two new specs, persistence hardening, the `grimoire-auditor` agent) and **Kiro CLI** runs on the owner's machine (the auditor invoked by name, the completed Context7 MCP lookup, and the CurseEngine Power install and activation tests) — each recorded in its own section below. No part of the engine or the apps was written outside Kiro; the only code-adjacent work done elsewhere was deployment packaging (zip assembly, Azure settings) and an independent adversarial QA pass after each slice, whose findings were fed back into the specs and fixed in new Kiro sessions.
 
 ## The build at a glance
 
@@ -24,9 +24,9 @@ Final state: **179/179 tests green, typecheck clean, frozen-lockfile install gre
 
 ### 1. IDE, CLI, Web, Crew — what did I use, and how did they differ?
 
-I used **Kiro Web exclusively**, on purpose. The whole build is session-shaped: one session per slice or fix pass, each starting from the spec pack and ending in a commit I could verify from a clean clone. Web sessions run server-side, so a session kept working while I reviewed the previous slice's QA report, and the session-to-commit mapping gives a clean, auditable usage trail (which matters in a competition that disqualifies entries for insufficient Kiro use).
+The core build used **Kiro Web**, on purpose. The whole build is session-shaped: one session per slice or fix pass, each starting from the spec pack and ending in a commit I could verify from a clean clone. Web sessions run server-side, so a session kept working while I reviewed the previous slice's QA report, and the session-to-commit mapping gives a clean, auditable usage trail (which matters in a competition that disqualifies entries for insufficient Kiro use).
 
-I did not use the IDE or CLI for this project, and Crew/Bots did not fit a solo, three-slice build with a fixed deadline — there was no recurring background job for a bot to own. The honest trade-off: I gave up the IDE's inline feel for a workflow where every unit of agent work is a discrete, reviewable session.
+Slice 4 added the **Kiro CLI** for the three things the Web surface could not do: invoke the `grimoire-auditor` custom agent by name, complete the Context7 MCP lookup, and install and test the CurseEngine Power — those runs are recorded in answers 2, 6 and 8 below. The **IDE** was not used, so Power skill activation on the IDE surface remains untested. Crew/Bots did not fit a solo build with a fixed deadline — there was no recurring background job for a bot to own. The honest trade-off: I gave up the IDE's inline feel for a workflow where every unit of agent work is a discrete, reviewable session.
 
 ### 2. Custom agents
 
@@ -46,7 +46,7 @@ Three hooks live in `.kiro/hooks/`, each in both IDE and Web formats:
 
 ### 4. Spec-driven development vs. vibe coding
 
-The repo carries **two specs** in `.kiro/specs/` — `curse-engine` and `curse-parser` — each with `requirements.md`, `design.md`, and `tasks.md`. Every slice followed the same loop: grill the requirements, write the spec, get explicit approval, implement task by task, verify from a pristine clone, run adversarial QA, amend the spec with the findings, fix in a new session.
+The repo carries **four specs** in `.kiro/specs/` — `curse-engine` and `curse-parser` from the core build, plus `grimoire-persistence-hardening` and `grimoire-auditor-agent` from Slice 4 — each with `requirements.md`, `design.md`, and `tasks.md`. Every slice followed the same loop: grill the requirements, write the spec, get explicit approval, implement task by task, verify from a pristine clone, run adversarial QA, amend the spec with the findings, fix in a new session.
 
 Three moments show what the spec bought:
 
@@ -129,7 +129,7 @@ Test 4, the restart hypothesis (suggested by the owner: a stale process, fixed b
 
 ## What the loop looked like, end to end
 
-Grill → spec (2 specs, 6 documents) → approval → Kiro Web session per slice → pristine-clone verification (frozen install, full suite, typecheck, engine-diff check) → independent adversarial QA → spec amendments → fix session → re-verification. Three slices, three QA passes, zero engine changes after the Slice 2 baseline — the two apps and the standup pack were added without touching `packages/curse-engine`, which is the Skeleton Crew claim, and it is mechanically checkable in the git history (the Slice 3 and persistence diffs contain zero files under `packages/curse-engine`).
+Grill → spec (4 specs) → approval → Kiro session per slice (Web for the core build; Web and CLI in Slice 4) → pristine-clone verification (frozen install, full suite, typecheck, engine-diff check) → independent adversarial QA → spec amendments → fix session → re-verification. Three slices, three QA passes, zero engine changes after the Slice 2 baseline — the two apps and the standup pack were added without touching `packages/curse-engine`, which is the Skeleton Crew claim, and it is mechanically checkable in the git history (the Slice 3 and persistence diffs contain zero files under `packages/curse-engine`).
 
 The total Kiro spend — about 50 credits of the 4,000-credit pack — is itself a finding: with the spec carrying the decisions, the agent's job was execution, and execution is cheap. The expensive part of this build was deciding, in writing, exactly what the software should do.
 
