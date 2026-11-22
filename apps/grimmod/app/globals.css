@@ -3,8 +3,137 @@
 /* Visible keyboard focus for every interactive element (WCAG 2.4.7). */
 @layer base {
   :focus-visible {
-    outline: 2px solid var(--color-sky-400);
+    outline: 2px solid #a78bfa; /* violet-400 */
     outline-offset: 2px;
+  }
+
+  ::selection {
+    background: #7c3aed; /* violet-600 */
+    color: #ffffff;
+  }
+
+  input,
+  textarea {
+    caret-color: #a78bfa;
+  }
+}
+
+/*
+ * Shared design system. This file is identical in both apps: one set of
+ * tokens and component treatments, only content differs.
+ * Surfaces: page zinc-950, panels zinc-900 + 1px zinc-800 border, no shadow.
+ * Accent: violet. Status: amber = flagged/escalation, red = muted/danger,
+ * emerald = simulation/success.
+ */
+@layer components {
+  .panel {
+    @apply min-w-0 rounded-xl border border-zinc-800 bg-zinc-900 p-5;
+  }
+  .panel-title {
+    @apply mb-3 text-[15px] font-semibold text-zinc-100;
+  }
+  .page-title {
+    @apply text-[28px] font-semibold leading-tight text-zinc-100;
+    letter-spacing: -0.02em;
+  }
+  .tagline {
+    @apply text-sm font-normal text-zinc-400;
+    letter-spacing: 0;
+  }
+  .meta {
+    @apply text-xs text-zinc-400;
+  }
+  .prose-note {
+    @apply max-w-[70ch] text-[13px] leading-relaxed text-zinc-400;
+  }
+
+  /* Buttons: primary, secondary, danger. */
+  .btn {
+    @apply inline-flex h-8 items-center justify-center rounded-lg px-3.5 text-sm font-medium transition-colors;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-violet-600 text-white hover:bg-violet-700 disabled:hover:bg-violet-600;
+  }
+  .btn-secondary {
+    @apply border border-zinc-700 bg-zinc-800 text-zinc-100 hover:bg-zinc-700 disabled:hover:bg-zinc-800;
+  }
+  .btn-danger {
+    @apply bg-red-700 text-white hover:bg-red-800 disabled:hover:bg-red-700;
+  }
+  .btn-sm {
+    @apply h-7 px-2.5 text-xs;
+  }
+
+  /* Form controls. */
+  .field-label {
+    @apply text-xs text-zinc-400;
+  }
+  .field {
+    @apply block h-8 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 text-sm text-zinc-100;
+  }
+  .editor {
+    @apply w-full rounded-lg border border-zinc-700 bg-zinc-950 p-3 text-sm leading-relaxed text-zinc-100;
+  }
+
+  /* Pills: 11px status badges. */
+  .pill {
+    @apply inline-flex items-center rounded-full border px-2 text-[11px] font-medium leading-5;
+  }
+  .pill-amber {
+    @apply border-amber-800 bg-amber-950 text-amber-200;
+  }
+  .pill-red {
+    @apply border-red-800 bg-red-950 text-red-200;
+  }
+  .pill-zinc {
+    @apply border-zinc-700 bg-zinc-800 text-zinc-300;
+  }
+
+  /* Composed empty state. */
+  .empty-state {
+    @apply rounded-lg border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-400;
+  }
+
+  /* Alerts and cards. */
+  .alert-red {
+    @apply rounded-lg border border-red-900 bg-red-950 px-3.5 py-3 text-sm text-red-200;
+  }
+  .card-amber {
+    @apply rounded-lg border border-amber-900 bg-amber-950 px-3.5 py-3 text-sm text-amber-100;
+  }
+
+  /* The single authored motion: a new decision, mute or row eases in. */
+  .arrive {
+    animation: arrive 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Thin scrollbars for scrolling lists. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #3f3f46 transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 9999px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

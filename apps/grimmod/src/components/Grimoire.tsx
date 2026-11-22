@@ -35,26 +35,26 @@ export function Grimoire({ version, onUndone }: { version: unknown; onUndone: ()
   }, [load, onUndone]);
 
   return (
-    <section aria-labelledby="grim-h" className="rounded border border-zinc-800 p-3 lg:col-span-2">
-      <h2 id="grim-h" className="mb-1 font-semibold">Grimoire</h2>
-      <p data-testid="grimoire-note" aria-live="polite" className="mb-2 text-xs text-zinc-400">
+    <section aria-labelledby="grim-h" className="panel lg:col-span-2">
+      <h2 id="grim-h" className="panel-title mb-1">Grimoire</h2>
+      <p data-testid="grimoire-note" aria-live="polite" className="prose-note mb-1">
         {data?.note ?? "Messages from a muted author produce no decision and no grimoire entry."}
         {data && data.suppressedTotal > 0 && <span data-testid="suppressed-count"> {data.suppressedTotal} suppressed while muted{data.suppressedTruncated ? ` (showing latest ${data.suppressed.length})` : ""}.</span>}
       </p>
-      <p className="mb-2 text-xs text-zinc-400">Entries are never edited or deleted while this host runs. A demo reset starts a new, empty log.</p>
-      {error && <div role="alert" className="mb-2 rounded bg-red-950 p-2 text-sm text-red-200">{error}</div>}
+      <p className="prose-note mb-3">Entries are never edited or deleted while this host runs. A demo reset starts a new, empty log.</p>
+      {error && <div role="alert" className="alert-red mb-3">{error}</div>}
       <div aria-live="polite">
       {(data?.entries.length ?? 0) === 0 ? (
-        <p className="text-sm text-zinc-400">No executed actions yet.</p>
+        <p className="empty-state">No executed actions yet.</p>
       ) : (
-        <ol data-testid="grimoire-list" className="space-y-1">
+        <ol data-testid="grimoire-list" className="scroll-thin max-h-96 overflow-y-auto pr-1">
           {data?.entries.map((e) => (
-            <li key={e.id} data-testid="grimoire-entry" data-status={e.status} className={`rounded px-2 py-1 text-xs ${e.status === "reversed" ? "bg-zinc-800" : "bg-zinc-900"}`}>
-              <span className="font-mono">{e.id}</span> {clock(e.at)} <strong>{e.kind}</strong> {e.target} by <span className="font-mono">{e.curse}</span>: <em>{e.status}</em>
-              {e.reversalOf && <> (reverses <span className="font-mono">{e.reversalOf}</span>)</>}
+            <li key={e.id} data-testid="grimoire-entry" data-status={e.status} className={`arrive border-t border-zinc-800 py-3 text-[13px] first:border-t-0 first:pt-0 ${e.status === "reversed" ? "text-zinc-400" : "text-zinc-200"}`}>
+              <span className="text-zinc-400">{e.id}</span> <span className="tabular-nums text-zinc-400">{clock(e.at)}</span> <strong className="font-semibold">{e.kind}</strong> {e.target} by <span className="text-zinc-400">{e.curse}</span>: <em>{e.status}</em>
+              {e.reversalOf && <> (reverses <span className="text-zinc-400">{e.reversalOf}</span>)</>}
               {e.reversed && <> (reversed)</>}
-              <div className="text-zinc-400">{e.eventSummary}. Path: {e.path}</div>
-              {e.reversible && <button type="button" data-testid="undo" onClick={() => void undo(e.id)} className="mt-1 rounded border border-zinc-600 px-2 py-0.5 hover:bg-zinc-800">Undo</button>}
+              <div className="meta mt-0.5">{e.eventSummary}. Path: {e.path}</div>
+              {e.reversible && <button type="button" data-testid="undo" onClick={() => void undo(e.id)} className="btn btn-secondary btn-sm mt-2">Undo</button>}
             </li>
           ))}
         </ol>

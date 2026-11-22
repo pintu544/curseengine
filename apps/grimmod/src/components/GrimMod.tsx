@@ -89,22 +89,22 @@ export function GrimMod() {
   const mutedNow = new Set(activeMutes.filter((m) => m.until > Date.now()).map((m) => m.author));
 
   return (
-    <main className="mx-auto grid max-w-7xl gap-4 p-4 lg:grid-cols-2">
-      <header className="lg:col-span-2 flex items-baseline justify-between">
-        <h1 className="text-2xl font-bold">GrimMod <span className="text-sm font-normal text-zinc-400">chat moderation you can read</span></h1>
-        <button type="button" onClick={() => void reset()} className="rounded border border-zinc-600 px-3 py-1 text-sm hover:bg-zinc-800" title="Discards messages, decisions, the grimoire, active mutes and installed curses">Reset demo (discards all live state)</button>
+    <main className="mx-auto grid max-w-7xl items-start gap-4 p-4 lg:grid-cols-2">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 pb-4 lg:col-span-2">
+        <h1 className="page-title flex flex-wrap items-baseline gap-x-3">GrimMod <span className="tagline">chat moderation you can read</span></h1>
+        <button type="button" onClick={() => void reset()} className="btn btn-secondary" title="Discards messages, decisions, the grimoire, active mutes and installed curses">Reset demo (discards all live state)</button>
       </header>
 
-      <section aria-labelledby="chat-h" className="rounded border border-zinc-800 p-3">
-        <h2 id="chat-h" className="mb-2 font-semibold">Chat #general</h2>
+      <section aria-labelledby="chat-h" className="panel">
+        <h2 id="chat-h" className="panel-title">Chat #general</h2>
         <div aria-live="polite">
           {[...mutedNow].map((a) => (
-            <div key={a} data-testid="mute-banner" className="mb-2 rounded bg-red-950 px-3 py-2 text-sm text-red-200">
+            <div key={a} data-testid="mute-banner" className="alert-red arrive mb-3 tabular-nums">
               {a} is muted until {clock(activeMutes.find((m) => m.author === a)?.until ?? 0)} (1 day by the curse).
             </div>
           ))}
         </div>
-        <ul data-testid="chat-list" aria-label="Chat messages" aria-live="polite" tabIndex={0} className="max-h-96 space-y-1 overflow-y-auto">
+        <ul data-testid="chat-list" aria-label="Chat messages" aria-live="polite" tabIndex={0} className="scroll-thin max-h-96 space-y-2 overflow-y-auto pr-1">
           {(chat?.messages ?? []).map((m) => (
             <li
               key={m.id}
@@ -112,31 +112,31 @@ export function GrimMod() {
               data-author={m.author}
               data-flagged={m.flagged}
               data-muted={m.muted}
-              className={`rounded px-2 py-1 text-sm ${m.system ? "bg-indigo-950 italic" : "bg-zinc-900"} ${m.muted ? "opacity-80 line-through" : ""}`}
+              className={`rounded-lg border px-3 py-2 text-sm ${m.system ? "border-zinc-800 bg-zinc-950 italic text-zinc-300" : "border-zinc-800 bg-zinc-950"} ${m.muted ? "opacity-80 line-through" : ""}`}
             >
-              <span className="font-semibold">{m.author}</span>
-              {m.flagged && <span className="ml-2 rounded bg-orange-800 px-1.5 text-xs">flagged</span>}
-              {m.muted && <span className="ml-2 rounded bg-red-700 px-1.5 text-xs no-underline">muted</span>}
-              {mutedNow.has(m.author) && !m.muted && <span className="ml-2 rounded bg-red-900 px-1.5 text-xs">author muted</span>}
-              <span className="ml-2 text-xs text-zinc-400">{clock(m.at)}</span>
-              <div>{m.text}</div>
+              <span className="font-semibold text-zinc-100">{m.author}</span>
+              {m.flagged && <span className="pill pill-amber ml-2 align-middle">flagged</span>}
+              {m.muted && <span className="pill pill-red ml-2 align-middle no-underline">muted</span>}
+              {mutedNow.has(m.author) && !m.muted && <span className="pill pill-red ml-2 align-middle">author muted</span>}
+              <span className="ml-2 text-xs tabular-nums text-zinc-400">{clock(m.at)}</span>
+              <div className="mt-0.5 text-zinc-200">{m.text}</div>
             </li>
           ))}
         </ul>
-        <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void send({ author, text, flagged }).catch(() => undefined); setText(""); } }}>
-          <label className="text-xs">Author<input aria-label="Author" value={author} onChange={(e) => setAuthor(e.target.value)} className="mt-1 block w-24 rounded bg-zinc-800 px-2 py-1 text-sm" /></label>
-          <label className="grow text-xs">Message<input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} className="mt-1 block w-full rounded bg-zinc-800 px-2 py-1 text-sm" /></label>
-          <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={flagged} onChange={(e) => setFlagged(e.target.checked)} />Flagged</label>
-          <button type="submit" className="rounded bg-zinc-700 px-3 py-1 text-sm hover:bg-zinc-600">Send</button>
+        <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); if (text.trim()) { void send({ author, text, flagged }).catch(() => undefined); setText(""); } }}>
+          <label className="field-label">Author<input aria-label="Author" value={author} onChange={(e) => setAuthor(e.target.value)} className="field mt-1 w-24" /></label>
+          <label className="field-label min-w-40 grow basis-48">Message<input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} className="field mt-1 w-full" /></label>
+          <label className="field-label flex h-8 items-center gap-1.5"><input type="checkbox" checked={flagged} onChange={(e) => setFlagged(e.target.checked)} className="accent-violet-500" />Flagged</label>
+          <button type="submit" className="btn btn-secondary">Send</button>
         </form>
-        <button type="button" data-testid="burst" disabled={busy} onClick={() => void burst()} className="mt-3 rounded bg-red-700 px-3 py-1.5 text-sm font-semibold hover:bg-red-800 disabled:opacity-50">
+        <button type="button" data-testid="burst" disabled={busy} onClick={() => void burst()} className="btn btn-danger mt-4">
           Raid-bot burst ({BURST_SIZE} flagged messages)
         </button>
       </section>
 
-      <section aria-labelledby="editor-h" className="rounded border border-zinc-800 p-3">
-        <h2 id="editor-h" className="mb-2 font-semibold">Curse editor</h2>
-        <label htmlFor="curse-source" className="text-xs text-zinc-400">Curse source</label>
+      <section aria-labelledby="editor-h" className="panel">
+        <h2 id="editor-h" className="panel-title">Curse editor</h2>
+        <label htmlFor="curse-source" className="field-label">Curse source</label>
         <textarea
           id="curse-source"
           data-testid="curse-source"
@@ -146,54 +146,54 @@ export function GrimMod() {
           spellCheck={false}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? "curse-error" : undefined}
-          className={`mt-1 w-full rounded bg-zinc-900 p-2 font-mono text-sm ${error ? "ring-2 ring-red-500" : ""}`}
+          className={`editor mt-1 font-mono ${error ? "ring-2 ring-red-500" : ""}`}
         />
         {error && (
-          <div id="curse-error" data-testid="curse-error" role="alert" className="mt-2 rounded bg-red-950 p-2 text-sm text-red-200">
+          <div id="curse-error" data-testid="curse-error" role="alert" className="alert-red mt-3">
             <div>Line {error.line}: {error.message}</div>
-            <pre tabIndex={0} role="region" aria-label="Offending line" className="mt-1 overflow-x-auto font-mono text-xs"><span className="bg-red-800">{lines[error.line - 1] ?? ""}</span></pre>
+            <pre tabIndex={0} role="region" aria-label="Offending line" className="scroll-thin mt-1 overflow-x-auto font-mono text-xs"><span className="bg-red-800">{lines[error.line - 1] ?? ""}</span></pre>
           </div>
         )}
-        <button type="button" data-testid="install" onClick={() => void install()} className="mt-2 rounded bg-sky-700 px-3 py-1.5 text-sm font-semibold hover:bg-sky-800">Install curse</button>
+        <button type="button" data-testid="install" onClick={() => void install()} className="btn btn-primary mt-3">Install curse</button>
       </section>
 
-      <section aria-labelledby="graph-h" className="rounded border border-zinc-800 p-3">
-        <h2 id="graph-h" className="mb-2 font-semibold">Rule graph</h2>
+      <section aria-labelledby="graph-h" className="panel">
+        <h2 id="graph-h" className="panel-title">Rule graph</h2>
         <RuleGraph graph={graph} />
       </section>
 
-      <section aria-labelledby="owner-h" className="rounded border border-zinc-800 p-3">
-        <h2 id="owner-h" className="mb-2 font-semibold">Owner inbox</h2>
+      <section aria-labelledby="owner-h" className="panel">
+        <h2 id="owner-h" className="panel-title">Owner inbox</h2>
         <div aria-live="polite">
           {(chat?.escalations.length ?? 0) === 0 ? (
-            <p className="text-sm text-zinc-400">No escalations.</p>
+            <p className="empty-state">No escalations.</p>
           ) : (
-            <ul data-testid="owner-inbox" className="space-y-1">
+            <ul data-testid="owner-inbox" className="space-y-2">
               {chat?.escalations.map((e) => (
-                <li key={e.id} data-testid="escalation" className="rounded bg-amber-950 px-3 py-2 text-sm text-amber-100">
-                  <strong>Escalated to owner</strong> at {clock(e.at)}: {e.summary}
+                <li key={e.id} data-testid="escalation" className="card-amber arrive tabular-nums">
+                  <strong className="font-semibold">Escalated to owner</strong> at {clock(e.at)}: {e.summary}
                 </li>
               ))}
             </ul>
           )}
         </div>
-        <h2 className="mb-2 mt-4 font-semibold">Decision log</h2>
+        <h2 className="panel-title mt-5">Decision log</h2>
         <div aria-live="polite">
         {!latest ? (
-          <p className="text-sm text-zinc-400">No decisions yet.</p>
+          <p className="empty-state">No decisions yet.</p>
         ) : (
-          <div data-testid="decision-log" className="text-sm">
+          <div data-testid="decision-log" className="arrive rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm">
             <p>
-              <span className="font-mono">{latest.curse}</span> on <span className="font-mono">{latest.eventId}</span>: <strong data-testid="decision-outcome">{latest.outcome}</strong>
+              <span className="font-mono">{latest.curse}</span> on <span className="font-mono">{latest.eventId}</span>: <strong data-testid="decision-outcome" className="font-semibold">{latest.outcome}</strong>
             </p>
-            <ul className="mt-1 space-y-0.5">
+            <ul className="mt-2 space-y-1">
               {latest.conditions.map((c, i) => (
-                <li key={i} className="font-mono text-xs">
+                <li key={i} className="font-mono text-xs text-zinc-300">
                   {c.result ? "✔" : "✘"} {c.description}: observed {String(c.observed)}, expected {String(c.expected)}
                 </li>
               ))}
               {latest.actions.map((a, i) => (
-                <li key={`a${i}`} className="font-mono text-xs">{a.kind} {a.target}: {a.status} ({a.reason})</li>
+                <li key={`a${i}`} className="font-mono text-xs text-zinc-300">{a.kind} {a.target}: {a.status} ({a.reason})</li>
               ))}
             </ul>
           </div>

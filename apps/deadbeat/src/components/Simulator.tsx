@@ -35,41 +35,43 @@ export function Simulator({ curseId }: { curseId: string }) {
 
   const report = res?.report;
   return (
-    <section aria-labelledby="sim-h" className="rounded border border-zinc-800 p-3 lg:col-span-2">
-      <h2 id="sim-h" className="mb-1 font-semibold">Simulator</h2>
-      <p className="mb-2 text-xs text-zinc-400">Replays one tick per fixture invoice through curse <span className="font-mono">{curseId}</span> with a recording stub. Nothing here touches the outbox or the invoices. Install the curse first.</p>
-      <button type="button" data-testid="run-sim" disabled={busy} onClick={() => void run()} className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50">Run simulation</button>
-      {error && <div role="alert" className="mt-2 rounded bg-red-950 p-2 text-sm text-red-200">{error}</div>}
-      <div aria-live="polite" className="mt-3 empty:hidden">
+    <section aria-labelledby="sim-h" className="panel lg:col-span-2">
+      <h2 id="sim-h" className="panel-title mb-1">Simulator</h2>
+      <p className="prose-note mb-3">Replays one tick per fixture invoice through curse <span className="font-semibold text-zinc-300">{curseId}</span> with a recording stub. Nothing here touches the outbox or the invoices. Install the curse first.</p>
+      <button type="button" data-testid="run-sim" disabled={busy} onClick={() => void run()} className="btn btn-secondary">Run simulation</button>
+      {error && <div role="alert" className="alert-red mt-3">{error}</div>}
+      <div aria-live="polite" className="mt-4 empty:hidden">
         {res && report && (
           <>
-            <p data-testid="sim-summary" className="text-lg font-semibold">{res.summaryLine}</p>
-            <p className="text-xs text-zinc-400">{report.summary.events} ticks, {report.summary.matchedRuns} matched runs.</p>
+            <p data-testid="sim-summary" className="arrive text-base font-semibold text-emerald-300">{res.summaryLine}</p>
+            <p className="meta mt-0.5 tabular-nums">{report.summary.events} ticks, {report.summary.matchedRuns} matched runs.</p>
           </>
         )}
       </div>
       {res && report && (
         <div>
-          <h3 className="mt-3 text-sm font-semibold">Per target</h3>
-          <ul data-testid="sim-targets" className="text-sm">
-            {report.summary.perTarget.map((t) => <li key={`${t.kind}-${t.target}`} className="font-mono text-xs">{t.kind} {t.target} x{t.count}</li>)}
-            {report.summary.perTarget.length === 0 && <li className="text-zinc-400">No actions would be taken.</li>}
+          <h3 className="mt-4 text-sm font-semibold">Per target</h3>
+          <ul data-testid="sim-targets" className="mt-1 space-y-0.5 text-sm">
+            {report.summary.perTarget.map((t) => <li key={`${t.kind}-${t.target}`} className="font-mono text-xs text-zinc-300">{t.kind} {t.target} x{t.count}</li>)}
+            {report.summary.perTarget.length === 0 && <li className="empty-state">No actions would be taken.</li>}
           </ul>
-          <h3 className="mt-3 text-sm font-semibold">Decisions</h3>
-          <table data-testid="sim-decisions" className="mt-1 w-full text-left text-xs">
-            <thead><tr className="text-zinc-400"><th className="pr-2">Event</th><th className="pr-2">Time (UTC)</th><th className="pr-2">Outcome</th><th>Actions</th></tr></thead>
+          <h3 className="mt-4 text-sm font-semibold">Decisions</h3>
+          <div className="scroll-thin mt-1 overflow-x-auto">
+          <table data-testid="sim-decisions" className="w-full text-left text-xs">
+            <thead><tr className="text-zinc-400"><th className="py-2 pr-3 font-medium">Event</th><th className="py-2 pr-3 font-medium">Time (UTC)</th><th className="py-2 pr-3 font-medium">Outcome</th><th className="py-2 font-medium">Actions</th></tr></thead>
             <tbody>
               {report.decisions.filter((d) => d.matched).map((d) => (
                 <tr key={`${d.curse}-${d.eventId}`} className="border-t border-zinc-800">
-                  <td className="pr-2 font-mono">{d.eventId}</td>
-                  <td className="pr-2">{clock(d.at)}</td>
-                  <td className="pr-2">{d.outcome}</td>
-                  <td className="font-mono">{d.actions.map((a) => `${a.kind} ${a.target ?? "(none)"}: ${a.status}`).join("; ")}</td>
+                  <td className="py-2 pr-3 font-mono">{d.eventId}</td>
+                  <td className="py-2 pr-3 tabular-nums">{clock(d.at)}</td>
+                  <td className="py-2 pr-3">{d.outcome}</td>
+                  <td className="py-2 font-mono">{d.actions.map((a) => `${a.kind} ${a.target ?? "(none)"}: ${a.status}`).join("; ")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-1 text-xs text-zinc-400">Events that matched no condition ({report.decisions.filter((d) => !d.matched).length}) are recorded in the report but not listed here.</p>
+          </div>
+          <p className="prose-note mt-2">Events that matched no condition ({report.decisions.filter((d) => !d.matched).length}) are recorded in the report but not listed here.</p>
         </div>
       )}
     </section>
