@@ -181,3 +181,7 @@ The brief asked for the `grimoire-auditor` agent to be invoked by name via sub-a
 
 **False negatives:** none established. Without the seeded negative fixture (spec task 4, not built) there is no measurement of what the auditor misses on known-bad input, so no claim is made either way. The stand-in also read only part of each app (it did not read `persistence.ts`, the undo routes or the UI), which it disclosed.
 
+## Slice 5: UI polish session (Kiro CLI, 2026-11-22)
+
+A presentation-only polish pass over both apps, run as a single **Kiro CLI** chat session (`--no-interactive`, `--trust-workspace`, scoped `--trust-tools=fs_read,fs_write,grep,glob` — never `--trust-all-tools`) from a written brief that froze everything except presentation: only `app/globals.css` and `className`/presentational JSX in `src/components/*.tsx` could change; no logic, no copy, no `data-testid` or ARIA changes. The session restyled both apps to one shared system (violet accent, shared panel/button/pill/empty-state classes in `globals.css`) and disclosed its own deviations in its summary: it attempted one shell call early on, which the scoped trust denied, and it left the pre-existing `↓`/`✔`/`✘` glyphs in place because removing them would edit visible strings. Verification happened outside the session, as with every slice: GrimMod 103/103, Deadbeat 74/74, engine 74/74 tests passing, `tsc --noEmit` clean in both apps, and both apps redeployed to Azure with the new UI live. The brief and this section are the record; no behaviour changed.
+
